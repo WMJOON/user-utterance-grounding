@@ -10,8 +10,8 @@
 |---|---|---|
 | `uug-orchestration` | 라우터/진입점 + 정책 | ✅ |
 | `uug-grounding` | 발화 → {target_project, intent, slots} + intent TTL/lookup + 위치 index + UserPromptSubmit 값전달 | ✅ |
-| `uug-user-memory` | UC/UP/UF 영속(schema-driven wm 엔진) | ⏳ planned |
-| `uug-pattern-analytics` | 발화/turns 패턴 탐지 → user-pattern 피드 | ⏳ planned |
+| `uug-user-memory` | UC/UP/UF 영속(vendored schema-driven wm 엔진 + bootstrap) | ✅ |
+| `uug-pattern-analytics` | 발화→intent 빈도·반복 탐지 → user-pattern 후보 | ✅ MVP |
 
 ## 설치
 

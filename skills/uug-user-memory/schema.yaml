@@ -1,0 +1,21 @@
+# uug-user-memory — user 스코프 메모리 스키마 (데이터레이어 인스턴스로 복제).
+# vendored wm_node.py 가 이 파일의 types/relation_types 를 읽어 동작(schema-driven, MSO v0.3.4+).
+# work-memory(프로젝트 스코프)의 user 스코프 쌍둥이 — 엔진 공유, 타입만 다름.
+version: "0.1.0"
+
+# ─── 타입 정의 (SSOT) ───────────────────────────────────────
+types:
+  user-context:    {prefix: UC, dir: context}      # 사용자·환경·프로젝트 사실
+  user-pattern:    {prefix: UP, dir: pattern}      # 관측된 행동 규칙 (uug-pattern-analytics 피드)
+  user-preference: {prefix: UF, dir: preference}   # 선호·작업 방식 (feedback)
+
+required_fields: [id, type, title, text, tags, created_at]
+
+# ─── relation 어휘 ──────────────────────────────────────────
+relation_types:
+  references:    "단순 참조"
+  supersedes:    "이전 entry 대체"
+  refines:       "정교화"
+  depends-on:    "의존"
+  derived-from:  "다른 스코프(예: 프로젝트 work-memory PR)에서 승격됨 — provenance 유지"
+  exhibited-in:  "이 패턴이 특정 에피소드/발화에서 관측됨"
