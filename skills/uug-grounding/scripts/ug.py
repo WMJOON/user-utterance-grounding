@@ -187,7 +187,7 @@ def cmd_ground(args):
     # ── hook 모드: 확신(target 해석)일 때만 1줄 주입, 아니면 침묵. 항상 exit 0. ──
     if getattr(args, "for_hook", False):
         if r.get("target_project") and r.get("target_path"):
-            print(f"[user-utterance-grounding] 발화 추정 → intent={r['intent_id']}, "
+            print(f"[uug-grounding] 발화 추정 → intent={r['intent_id']}, "
                   f"target_project={r['target_project']} ({r['target_via']}). 다르면 프로젝트를 명시하세요.")
         return 0
 

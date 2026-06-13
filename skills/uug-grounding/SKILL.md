@@ -1,5 +1,5 @@
 ---
-name: user-utterance-grounding
+name: uug-grounding
 description: >
   사용자가 특정 {project-name} 을 명시하지 않은 발화에서, intent 유형으로 타깃
   프로젝트를 추론(grounding)한다. 또 프로젝트 위치를 머신-이식 가능한 레지스트리
@@ -12,7 +12,7 @@ description: >
   status: MVP (grounding + 인덱스/리졸버). 메모리 레이어는 후속.
 ---
 
-# user-utterance-grounding
+# uug-grounding
 
 발화를 **타깃 프로젝트로 grounding** 하고, 프로젝트 위치를 **머신 무관**으로 해석하는 스킬셋. 설계 정본: [planning/user-memory-architecture.md](../../../planning/user-memory-architecture.md) (§1.5 핵심 기능).
 

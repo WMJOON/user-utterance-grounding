@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — user-utterance-grounding 글로벌 설치 (사용자가 직접 실행).
+# install.sh — uug-grounding 글로벌 설치 (사용자가 직접 실행).
 #   1) 스킬을 ~/.claude/skills/ 에 심링크 (경로 머신-무관: ~ 로 해석)
 #   2) UserPromptSubmit 훅을 ~/.claude/settings.json 에 등록 (merge, 멱등)
 # 에이전트는 이 스크립트를 *실행하지 않는다* — 설정 자기수정 가드 때문. 사용자가 실행.
@@ -7,13 +7,13 @@
 set -euo pipefail
 
 SKILL_SRC="$(cd "$(dirname "$0")" && pwd)"
-SKILL_NAME="user-utterance-grounding"
+SKILL_NAME="uug-grounding"
 GLOBAL_SKILL="$HOME/.claude/skills/$SKILL_NAME"
 SETTINGS="$HOME/.claude/settings.json"
 # 머신-무관 경로: 런타임에 $HOME 로 해석되도록 리터럴 보존
-HOOK_CMD='python3 "$HOME/.claude/skills/user-utterance-grounding/hooks/ug-prompt-hook.py"'
+HOOK_CMD='python3 "$HOME/.claude/skills/uug-grounding/hooks/ug-prompt-hook.py"'
 
-echo "user-utterance-grounding 설치"
+echo "uug-grounding 설치"
 echo "  소스: $SKILL_SRC"
 
 # 1) 심링크
