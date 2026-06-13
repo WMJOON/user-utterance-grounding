@@ -1,0 +1,72 @@
+id: https://uug.dev/nlu_intent
+name: uug_nlu_intent
+version: "0.1.0"
+description: >
+  user-utterance-grounding NLU Intent Layer Schema.
+  Intent / SlotSpec / SessionContext 클래스 정의. mso-intent-registry 의
+  nlu_intent.yaml 을 복사·adapt(직접 의존 X) — verb/target 을 user/cross-project
+  도메인으로 재작성. SoT 는 instances/user_intents.ttl (TTL), 이 스키마는 OWL/
+  SHACL/JSON-schema 생성·검증용. (MSM 패턴: 엄밀 정의 → 컨버팅해서 사용.)
+
+prefixes:
+  linkml: https://w3id.org/linkml/
+  uug:    https://uug.dev/ontology/
+  skos:   http://www.w3.org/2004/02/skos/core#
+  xsd:    http://www.w3.org/2001/XMLSchema#
+
+default_prefix: uug
+default_range: string
+
+imports:
+  - linkml:types
+
+enums:
+  SlotTypeEnum:
+    description: 슬롯 값의 종류
+    permissible_values:
+      entity_ref:  {description: "프로젝트/엔티티 식별자 (예: agent-knowledge-base)"}
+      timestamp:   {description: "ISO-8601 날짜/시간"}
+      enum_value:  {description: "미리 정의된 값 목록 중 하나"}
+      free_text:   {description: "자유 텍스트"}
+
+  FillPolicyEnum:
+    description: 슬롯 채움 전략
+    permissible_values:
+      ask:             {description: "utterance 에서 추출 시도, 없으면 reprompt(HITL)"}
+      session_context: {description: "SessionContext(최근 프로젝트 등)에서 자동 채움 — project-name 미명시 추론의 핵심"}
+      default:         {description: "SlotSpec.default_value 사용"}
+
+  TierEnum:
+    description: grounding tier escalation
+    permissible_values:
+      Lv10: {description: "Deterministic rule (trigger_keywords) — LLM 없음"}
+      Lv20: {description: "경량 모델 추론"}
+      Lv30: {description: "LLM reasoning"}
+
+classes:
+  SlotSpec:
+    description: Intent 충족에 필요한 슬롯 명세
+    attributes:
+      slot_name:     {identifier: true, required: true, description: "예: target_project, concept"}
+      slot_type:     {range: SlotTypeEnum, required: true}
+      required:      {range: boolean, required: true, description: "true면 미충족 시 reprompt"}
+      fill_policy:   {range: FillPolicyEnum, required: true}
+      default_value: {required: false, description: "fill_policy=default 일 때 사용"}
+
+  Intent:
+    description: user 운영 발화의 canonical representation
+    attributes:
+      intent_id:          {identifier: true, required: true, description: "예: work-on-project"}
+      verb_concept:       {required: true, description: "SKOS URI — uug:WorkVerb/CreateVerb/QueryVerb/UpdateVerb"}
+      target_concept:     {required: true, description: "SKOS URI — uug:Project 등"}
+      trigger_keywords:   {multivalued: true, description: "Lv10 rule 매칭 키워드(한국어 포함)"}
+      slot_specs:         {range: SlotSpec, multivalued: true, inlined: true, description: "이 intent의 슬롯 명세"}
+      example_utterances: {multivalued: true, description: "테스트·문서용 예시 발화"}
+
+  SessionContext:
+    description: grounding 시 슬롯 채움에 쓰는 세션 상태 (session_context fill_policy 소스)
+    attributes:
+      session_id:        {identifier: true, required: true}
+      last_project:      {required: false, description: "직전 발화/작업의 타깃 프로젝트 — target_project 추론 1순위"}
+      recent_projects:   {multivalued: true, description: "최근 활성 프로젝트 목록(최신순)"}
+      now:               {range: datetime, required: false}

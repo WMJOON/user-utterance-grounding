@@ -1,0 +1,5 @@
+# 런타임 (lookup.py grounding)
+rdflib>=7.0
+pyyaml>=6.0
+# 빌드 전용 (tools/build.sh — gen-owl/shacl/json-schema). 런타임 불필요.
+# linkml>=1.7

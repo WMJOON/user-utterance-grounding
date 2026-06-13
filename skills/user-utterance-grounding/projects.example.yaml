@@ -1,0 +1,22 @@
+# projects.yaml 템플릿 — 이 파일을 projects.yaml 로 복사하고 본인 프로젝트를 등록한다.
+# (projects.yaml 은 본인 환경의 프로젝트 레지스트리. 이 example 은 추상화/배포용 샘플.)
+#
+# 각 항목:
+#   anchor   : machine.yaml 의 앵커명 (vault/code/home 등). 위치의 머신-무관 기준점.
+#   rel      : 앵커 상대경로.
+#   keywords : target_project 추론용 자연어 트리거 (발화에 이 단어 등장 시 이 프로젝트로 grounding).
+#   tags     : 분류용(선택).
+# ※ 절대경로는 여기 두지 않는다 → machine.yaml(로컬)이 anchor→절대경로.
+# ※ intent 정의는 여기 아님 → instances/user_intents.ttl.
+
+my-main-repo:
+  anchor: vault
+  rel: path/to/main-repo
+  keywords: ["메인", "main repo", "별칭"]
+  tags: [example]
+
+my-knowledge-base:
+  anchor: vault
+  rel: path/to/kb
+  keywords: ["KB", "지식베이스", "노트"]
+  tags: [example, knowledge-base]

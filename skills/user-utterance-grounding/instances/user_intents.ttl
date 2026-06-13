@@ -1,0 +1,82 @@
+@prefix uug:  <https://uug.dev/ontology/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# user-utterance-grounding — Intent 인스턴스 (SoT, 엄밀 TTL).
+# 스키마: references/schemas/nlu_intent.yaml. 소비: src/lookup.py (RDFLib).
+# slot fill_policy: ask(발화 추출) / session_context(추론) / default(고정).
+# target_project 슬롯의 session_context = project-name 미명시 시 추론 → grounding 핵심.
+
+uug:Intent   a rdfs:Class ; rdfs:label "Intent" .
+uug:SlotSpec a rdfs:Class ; rdfs:label "SlotSpec" .
+
+# ─── WORK ───────────────────────────────────────────────────
+uug:work-on-project a uug:Intent ;
+    uug:intent_id "work-on-project" ;
+    uug:verb_concept uug:WorkVerb ;
+    uug:target_concept uug:Project ;
+    uug:trigger_keywords ("작업" "착수" "계속" "이거 하자" "진행해" "이어서") ;
+    uug:example_utterances ("이거 착수하자" "그거 계속 진행해줘" "이어서 작업해줘") ;
+    uug:slot_specs (
+        [ a uug:SlotSpec ; uug:slot_name "target_project" ; uug:slot_type "entity_ref" ;
+          uug:required "true" ; uug:fill_policy "session_context" ;
+          rdfs:comment "미명시 시 SessionContext.last_project + projects.yaml 키워드로 추론" ]
+        [ a uug:SlotSpec ; uug:slot_name "task" ; uug:slot_type "free_text" ;
+          uug:required "false" ; uug:fill_policy "ask" ]
+    ) .
+
+# ─── CREATE: 지식 추가 ───────────────────────────────────────
+uug:add-to-knowledge a uug:Intent ;
+    uug:intent_id "add-to-knowledge" ;
+    uug:verb_concept uug:CreateVerb ;
+    uug:target_concept uug:Project ;
+    uug:trigger_keywords ("KB에 추가" "개념 추가" "지식베이스에" "온톨로지 추가") ;
+    uug:example_utterances ("이 개념 KB에 추가해줘" "지식베이스에 넣어줘") ;
+    uug:slot_specs (
+        [ a uug:SlotSpec ; uug:slot_name "target_project" ; uug:slot_type "entity_ref" ;
+          uug:required "true" ; uug:fill_policy "default" ; uug:default_value "agent-knowledge-base" ]
+        [ a uug:SlotSpec ; uug:slot_name "concept" ; uug:slot_type "free_text" ;
+          uug:required "true" ; uug:fill_policy "ask" ]
+    ) .
+
+# ─── QUERY: 리서치 ──────────────────────────────────────────
+uug:run-research a uug:Intent ;
+    uug:intent_id "run-research" ;
+    uug:verb_concept uug:QueryVerb ;
+    uug:target_concept uug:Project ;
+    uug:trigger_keywords ("리서치" "자료 조사" "조사해줘" "찾아줘" "research") ;
+    uug:example_utterances ("이 주제 리서치 돌려줘" "관련 자료 조사해줘") ;
+    uug:slot_specs (
+        [ a uug:SlotSpec ; uug:slot_name "topic" ; uug:slot_type "free_text" ;
+          uug:required "true" ; uug:fill_policy "ask" ]
+        [ a uug:SlotSpec ; uug:slot_name "target_project" ; uug:slot_type "entity_ref" ;
+          uug:required "false" ; uug:fill_policy "session_context" ]
+    ) .
+
+# ─── CREATE: 기록 ───────────────────────────────────────────
+uug:record-memory a uug:Intent ;
+    uug:intent_id "record-memory" ;
+    uug:verb_concept uug:CreateVerb ;
+    uug:target_concept uug:Project ;
+    uug:trigger_keywords ("기록" "메모" "남겨" "기억해" "적어둬") ;
+    uug:example_utterances ("이거 기록해둬" "메모 남겨줘") ;
+    uug:slot_specs (
+        [ a uug:SlotSpec ; uug:slot_name "scope" ; uug:slot_type "enum_value" ;
+          uug:required "true" ; uug:fill_policy "ask" ; uug:default_value "project" ;
+          rdfs:comment "user | project — user-memory vs work-memory 라우팅" ]
+        [ a uug:SlotSpec ; uug:slot_name "content" ; uug:slot_type "free_text" ;
+          uug:required "true" ; uug:fill_policy "ask" ]
+        [ a uug:SlotSpec ; uug:slot_name "target_project" ; uug:slot_type "entity_ref" ;
+          uug:required "false" ; uug:fill_policy "session_context" ]
+    ) .
+
+# ─── UPDATE: 정리 ───────────────────────────────────────────
+uug:tidy-organize a uug:Intent ;
+    uug:intent_id "tidy-organize" ;
+    uug:verb_concept uug:UpdateVerb ;
+    uug:target_concept uug:Project ;
+    uug:trigger_keywords ("정리" "정리하자" "리팩터" "구조 정리" "이관") ;
+    uug:example_utterances ("이 디렉토리 정리하자" "구조 리팩터해줘") ;
+    uug:slot_specs (
+        [ a uug:SlotSpec ; uug:slot_name "target_project" ; uug:slot_type "entity_ref" ;
+          uug:required "true" ; uug:fill_policy "session_context" ]
+    ) .

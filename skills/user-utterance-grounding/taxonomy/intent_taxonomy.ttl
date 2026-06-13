@@ -1,0 +1,9 @@
+@prefix uug:  <https://uug.dev/ontology/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+# user-utterance-grounding — verb 개념 SKOS 위계 (intent.verb_concept 가 참조).
+uug:Verb       a skos:Concept ; skos:prefLabel "Verb" .
+uug:WorkVerb   a skos:Concept ; skos:broader uug:Verb ; skos:prefLabel "Work"   .
+uug:CreateVerb a skos:Concept ; skos:broader uug:Verb ; skos:prefLabel "Create" .
+uug:QueryVerb  a skos:Concept ; skos:broader uug:Verb ; skos:prefLabel "Query"  .
+uug:UpdateVerb a skos:Concept ; skos:broader uug:Verb ; skos:prefLabel "Update" .

@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""user-utterance-grounding (ug) — intent 기반 project grounding + 머신 이식 리졸버.
+
+명령:
+  ug.py ground "<발화>"     # 발화 → 타깃 프로젝트 추론 (project-name 미명시여도). Lv10 keyword
+  ug.py resolve <project>   # project → 이 머신의 절대경로 (앵커로 해석)
+  ug.py doctor              # 레지스트리 전체 경로 존재 확인 (✓ found / ✗ missing / ⚠ anchor)
+  ug.py list                # 등록된 프로젝트
+
+설정 (스킬 디렉토리 옆):
+  projects.yaml         싱크됨   — {project: {anchor, rel, intents, keywords, tags}}
+  machine.yaml          gitignore — {anchors: {name: 절대경로}}  (머신마다 다름)
+  machine.example.yaml  싱크됨   — 새 머신용 템플릿
+machine.yaml 없으면 .obsidian 마커를 위로 탐지해 vault 앵커를 자동 부트스트랩.
+의존성: pyyaml (stdlib 외).
+"""
+import os
+import sys
+import json
+import datetime
+import argparse
+from pathlib import Path
+
+import yaml
+
+SKILL_DIR = Path(__file__).resolve().parent.parent   # scripts/ 의 부모 = 스킬 디렉토리
+PROJECTS = SKILL_DIR / "projects.yaml"
+MACHINE = SKILL_DIR / "machine.yaml"
+# last_project 등 세션 상태 (gitignore, 머신-로컬). UG_SESSION 으로 override (테스트 격리).
+SESSION = Path(os.environ.get("UG_SESSION", SKILL_DIR / ".session.json"))
+
+
+def _load_yaml(p, default):
+    try:
+        return yaml.safe_load(open(p, encoding="utf-8")) or default
+    except FileNotFoundError:
+        return default
+
+
+def _autodetect_vault():
+    """스킬 위치(symlink resolve 후)에서 위로 .obsidian 을 탐지 → vault 루트."""
+    for cand in [SKILL_DIR, *SKILL_DIR.parents]:
+        if (cand / ".obsidian").is_dir():
+            return str(cand)
+    return None
+
+
+def load_anchors():
+    m = _load_yaml(MACHINE, {})
+    anchors = dict((m or {}).get("anchors", {}))
+    if not anchors:
+        v = _autodetect_vault()
+        if v:
+            anchors["vault"] = v
+            MACHINE.write_text(
+                yaml.safe_dump({"anchors": anchors}, allow_unicode=True), encoding="utf-8"
+            )
+            print(f"[bootstrap] machine.yaml 없음 → .obsidian 탐지로 vault={v} 자동 생성", file=sys.stderr)
+    return anchors
+
+
+def load_projects():
+    return _load_yaml(PROJECTS, {}) or {}
+
+
+def load_session():
+    try:
+        return json.loads(SESSION.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_session(project):
+    SESSION.write_text(
+        json.dumps(
+            {"last_project": project,
+             "updated": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+            ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def resolve_one(name, projects, anchors):
+    p = projects.get(name)
+    if not p:
+        return None, "unknown-project"
+    anchor = p.get("anchor")
+    if anchor not in anchors:
+        return None, f"anchor-undefined:{anchor}"
+    return str(Path(anchors[anchor]) / p.get("rel", "")), None
+
+
+def cmd_resolve(args):
+    path, err = resolve_one(args.project, load_projects(), load_anchors())
+    if err:
+        print(f"[ERROR] {args.project}: {err}", file=sys.stderr)
+        return 1
+    print(path)
+    return 0
+
+
+def cmd_doctor(args):
+    projects, anchors = load_projects(), load_anchors()
+    ok = True
+    for name in sorted(projects):
+        path, err = resolve_one(name, projects, anchors)
+        if err and err.startswith("anchor-undefined"):
+            print(f"  ⚠ {name}: {err} — machine.yaml 에 앵커 추가 필요")
+            ok = False
+        elif path and Path(path).exists():
+            print(f"  ✓ {name}: {path}")
+        else:
+            print(f"  ✗ {name}: {path} — 이 머신에 없음(미클론/이동)")
+            ok = False
+    return 0 if ok else 1
+
+
+def _match_project(utterance, projects):
+    """projects.yaml 키워드/이름으로 발화에서 프로젝트 후보 점수화 (target_project 슬롯 해석)."""
+    utt = utterance.lower()
+    scored = []
+    for name, p in projects.items():
+        terms = [name] + list(p.get("keywords", [])) + list(p.get("tags", []))
+        hits = sorted({t for t in terms if str(t).lower() and str(t).lower() in utt})
+        if hits:
+            scored.append((len(hits), name, hits))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return scored
+
+
+def _do_ground(utterance):
+    """grounding 계산(출력 없음). dict 반환: status no-intent|ambiguous|incomplete|ok + 부가."""
+    sys.path.insert(0, str(SKILL_DIR / "src"))
+    import lookup  # rdflib
+
+    m = lookup.match_intent(utterance)
+    intent = m["intent"]
+    if intent is None:
+        return {"status": "no-intent"}
+    if m["ambiguous"]:
+        return {"status": "ambiguous",
+                "candidates": [(iid, h) for iid, sc, h in m["candidates"] if sc == m["score"]]}
+
+    projects = load_projects()
+    proj_cands = _match_project(utterance, projects)
+    sess = load_session()
+    slots, unfilled = {}, []
+    for spec in intent["slot_specs"]:
+        nm, pol, req = spec["slot_name"], spec["fill_policy"], spec["required"]
+        if nm == "target_project":
+            if pol == "default":
+                slots[nm] = spec["default_value"]
+            else:  # session_context: 발화 프로젝트 키워드 → 없으면 last_project(세션) 폴백
+                clear = proj_cands and (len(proj_cands) == 1 or proj_cands[0][0] > proj_cands[1][0])
+                slots[nm] = proj_cands[0][1] if clear else sess.get("last_project")
+        else:
+            slots[nm] = spec["default_value"] if pol == "default" else None  # ask 자유텍스트는 Lv30(후속)
+        if req and slots[nm] is None:
+            unfilled.append(nm)
+
+    tp = slots.get("target_project")
+    target_path = None
+    if tp:
+        path, err = resolve_one(tp, projects, load_anchors())
+        target_path = path if not err else None
+        save_session(tp)   # last_project 갱신 (세션 추적)
+    via = "발화" if proj_cands and slots.get("target_project") == proj_cands[0][1] else ("last_project" if tp else None)
+    return {"status": "incomplete" if unfilled else "ok",
+            "intent_id": intent["intent_id"], "verb": intent["verb_concept"],
+            "hits": m["hits"], "slots": slots, "unfilled": unfilled,
+            "target_project": tp, "target_path": target_path, "target_via": via}
+
+
+def cmd_ground(args):
+    """발화 → intent(TTL) 분류 → slot fill(ask/session_context/default) → GroundedCommand."""
+    sys.path.insert(0, str(SKILL_DIR / "src"))
+    try:
+        import lookup  # noqa: F401
+    except ImportError:
+        if getattr(args, "for_hook", False):
+            return 0  # hook 은 절대 프롬프트를 막지 않음
+        print("[ERROR] rdflib 필요 — pip install rdflib", file=sys.stderr)
+        return 1
+
+    r = _do_ground(args.utterance)
+
+    # ── hook 모드: 확신(target 해석)일 때만 1줄 주입, 아니면 침묵. 항상 exit 0. ──
+    if getattr(args, "for_hook", False):
+        if r.get("target_project") and r.get("target_path"):
+            print(f"[user-utterance-grounding] 발화 추정 → intent={r['intent_id']}, "
+                  f"target_project={r['target_project']} ({r['target_via']}). 다르면 프로젝트를 명시하세요.")
+        return 0
+
+    # ── 일반(verbose) 모드 ──
+    if r["status"] == "no-intent":
+        print("[ground] intent 미매칭 → 명시 필요 (HITL)")
+        return 2
+    if r["status"] == "ambiguous":
+        print("[ground] intent 모호(동점) — HITL 필요:")
+        for iid, h in r["candidates"]:
+            print(f"    {iid} (hits={h})")
+        return 2
+    print(f"[ground] intent={r['intent_id']} (verb={r['verb']}, hits={r['hits']})")
+    for nm, v in r["slots"].items():
+        tag = f"  [{r['target_via']}]" if (nm == "target_project" and v) else ""
+        print(f"    {nm} = {v if v is not None else '(미충족)'}{tag}")
+    if r["unfilled"]:
+        print(f"  → reprompt(HITL): 필수 슬롯 미충족 {r['unfilled']}")
+        return 2
+    if r["target_path"]:
+        print(f"    └ target_project 경로: {r['target_path']}")
+    print(f"  → GroundedCommand {{intent: {r['intent_id']}, slots: {r['slots']}}}")
+    return 0
+
+
+def cmd_use(args):
+    """현재 작업 프로젝트를 명시적으로 고정 (last_project) — 이후 신호0 발화 추론에 사용."""
+    if args.project not in load_projects():
+        print(f"[ERROR] 미등록 프로젝트: {args.project} (projects.yaml 확인)", file=sys.stderr)
+        return 1
+    save_session(args.project)
+    print(f"[use] last_project = {args.project}")
+    return 0
+
+
+def cmd_list(args):
+    sess = load_session()
+    if sess.get("last_project"):
+        print(f"  (last_project = {sess['last_project']})")
+    for name, p in sorted(load_projects().items()):
+        print(f"  {name}: {p.get('anchor')}/{p.get('rel')}  keywords={p.get('keywords', [])[:3]}…")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="ug", description="user-utterance-grounding")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("resolve"); s.add_argument("project"); s.set_defaults(func=cmd_resolve)
+    s = sub.add_parser("doctor"); s.set_defaults(func=cmd_doctor)
+    s = sub.add_parser("ground"); s.add_argument("utterance")
+    s.add_argument("--for-hook", action="store_true", help="hook 모드: 확신 시 1줄 주입, 아니면 침묵, 항상 exit 0")
+    s.set_defaults(func=cmd_ground)
+    s = sub.add_parser("use"); s.add_argument("project"); s.set_defaults(func=cmd_use)
+    s = sub.add_parser("list"); s.set_defaults(func=cmd_list)
+    args = ap.parse_args()
+    sys.exit(args.func(args))
+
+
+if __name__ == "__main__":
+    main()
