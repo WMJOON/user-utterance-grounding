@@ -26,10 +26,14 @@ my-knowledge-base:
   tags: [example, knowledge-base]
 
 # 도메인 레지스트리 브리지 예시 — 이 프로젝트의 운영 intent(예: MSO dispatch_ticket)를
-# UUG 가 ground 할 수 있게 한다.
+# UUG 가 ground 할 수 있게 한다. dispatch 까지 선언하면 `ug dispatch` 가 그 intent 의
+# 뒷단(intent→action)을 이 프로젝트의 CLI 에 subprocess 위임한다(§11 UUG→프로젝트 배선).
 my-orchestrator:
   anchor: vault
   rel: path/to/orchestrator
   keywords: ["오케스트레이터", "티켓", "dispatch"]
   tags: [example, orchestrator]
   intent_registry: repository/skills/intent-registry/instances/intents.ttl
+  dispatch:                                   # (선택) 도메인 intent 뒷단 위임 진입점
+    kind: cli                                 # 현재 지원: cli (subprocess 경계)
+    entry: repository/skills/intent-registry/src/pipeline.py   # `python entry ground --intent-id X --utterance "..."`

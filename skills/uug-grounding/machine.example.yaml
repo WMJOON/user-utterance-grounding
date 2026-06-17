@@ -1,6 +1,7 @@
-# 이 파일을 machine.yaml 로 복사하고 이 머신의 절대경로를 채운다.
-# machine.yaml 은 gitignore — 머신마다 다르므로 싱크하지 않는다.
-# 비워두면 ug.py 가 .obsidian 마커를 위로 탐지해 vault 앵커를 자동 부트스트랩한다.
-anchors:
-  vault: /Users/<you>/Library/Mobile Documents/iCloud~md~obsidian/Documents/vault
+# 이 파일을 machine.yaml 로 복사한다. machine.yaml 은 gitignore.
+# vault 앵커는 적지 않아도 된다 — ug.py 가 .obsidian 마커를 위로 탐지해
+# 런타임에 자동 도출한다(머신-무관). vault 가 iCloud 동기화 경로 안이라
+# 절대경로를 적어두면 다른 머신으로 복제될 때 오염되므로 비워두는 편이 안전하다.
+# vault 밖 레포가 있을 때만 그 앵커를 이 머신의 절대경로로 추가한다.
+anchors: {}
   # code: /Users/<you>/dev      # vault 밖 레포가 있으면 앵커 추가 (선택)

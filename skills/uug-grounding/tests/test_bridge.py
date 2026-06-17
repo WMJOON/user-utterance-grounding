@@ -111,6 +111,47 @@ def test_commit_policy_user_tie_stays_hitl():
     assert r["status"] == "ambiguous"
 
 
+# ─── §11 배선: UUG→프로젝트(MSO) end-to-end dispatch (전제 #2 실호출) ───
+# 전제 #1(멀티-레지스트리 ground)에 이어, 도메인 intent 의 뒷단을 프로젝트 CLI 에
+# subprocess 위임하는 실제 배선. MSO 는 UUG 를 모른다(단방향 의존, 프로세스 경계).
+
+@pytest.mark.skipif(not _HAS_MSO, reason="MSO intents.ttl 부재")
+def test_dispatch_delegates_domain_intent_to_mso():
+    """ug ground(앞단) → dispatch_to_project → MSO pipeline CLI(뒷단) → GroundedCommand."""
+    if not _mso_in_registries():
+        pytest.skip("machine.yaml 앵커 미설정 (배선 경로 환경 의존)")
+    projects, anchors = ug.load_projects(), ug.load_anchors()
+    r = ug._do_ground("ticket-217 재실행")
+    assert r["source_project"] == "multi-swarm-orchestrator"
+    grounded, err = ug.dispatch_to_project(r, projects, anchors, "ticket-217 재실행")
+    assert err is None, f"dispatch 실패: {err}"
+    # MSO 뒷단(slot_filler→resolver→validator)이 채운 GroundedCommand
+    assert grounded["intent_id"] == "dispatch_ticket"
+    assert grounded["tier"] == "UUG"
+    assert grounded["slots"]["ticket_ref"] == "ticket-217"
+    assert grounded["target_id"] == "ticket-217"
+    assert grounded["reprompt_needed"] is False
+
+
+def test_dispatch_user_intent_falls_back_no_delegation():
+    """user intent(source_project=None)는 dispatch 미선언 → no-dispatch(UUG 자체 처리)."""
+    projects, anchors = ug.load_projects(), ug.load_anchors()
+    fake = {"status": "ok", "intent_id": "tidy-organize", "source_project": None}
+    grounded, err = ug.dispatch_to_project(fake, projects, anchors, "스킬 정리하자")
+    assert grounded is None
+    assert err == "no-dispatch"
+
+
+def test_dispatch_unresolved_project_errors_loudly():
+    """dispatch 선언됐으나 프로젝트 미해소 시 조용히 삼키지 않고 에러 반환(drift 탐지)."""
+    projects = {"ghost": {"anchor": "vault", "rel": "no/such/path",
+                          "dispatch": {"kind": "cli", "entry": "x/y.py"}}}
+    fake = {"status": "ok", "intent_id": "whatever", "source_project": "ghost"}
+    grounded, err = ug.dispatch_to_project(fake, projects, ug.load_anchors(), "발화")
+    assert grounded is None
+    assert err is not None and err != "no-dispatch"
+
+
 # ─── 앞단 DoD 이전 (구 mso-utterance-grounding fixture_accuracy) ───
 # §11: utterance→intent 정확도는 이제 UUG 책임. MSO 50-fixture top-1 ≥80%.
 _FIXTURE = Path(__file__).resolve().parent / "fixtures" / "mso_utterances_50.jsonl"

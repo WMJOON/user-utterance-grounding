@@ -46,16 +46,24 @@ def _autodetect_vault():
 
 
 def load_anchors():
+    """앵커(앵커명→절대경로) 해소. vault 앵커는 머신-무관하게 자가복구한다.
+
+    machine.yaml 은 gitignore 지만 vault 가 iCloud 동기화 경로 안이면 머신 간에
+    복제되어 절대경로가 오염된다(user↔wmjoon 등). vault 는 코드가 그 안에
+    살므로 .obsidian 마커로 런타임 도출이 항상 가능 → 저장값이 이 머신에 실재하지
+    않으면 탐지값으로 덮어쓰고, 절대경로를 다시 persist 하지 않아 오염 고리를 끊는다.
+    vault 밖 앵커(code/home 등)는 machine.yaml 저장값을 그대로 신뢰한다.
+    """
     m = _load_yaml(MACHINE, {})
     anchors = dict((m or {}).get("anchors", {}))
-    if not anchors:
+    stored = anchors.get("vault")
+    if not stored or not Path(stored).is_dir():
         v = _autodetect_vault()
         if v:
             anchors["vault"] = v
-            MACHINE.write_text(
-                yaml.safe_dump({"anchors": anchors}, allow_unicode=True), encoding="utf-8"
-            )
-            print(f"[bootstrap] machine.yaml 없음 → .obsidian 탐지로 vault={v} 자동 생성", file=sys.stderr)
+            if stored and stored != v:
+                print(f"[self-heal] machine.yaml vault={stored} 이 머신에 없음 "
+                      f"→ .obsidian 탐지로 {v} 사용 (machine.yaml 미수정)", file=sys.stderr)
     return anchors
 
 
@@ -211,6 +219,7 @@ def _do_ground(utterance):
             "intent_id": intent["intent_id"], "verb": intent["verb_concept"],
             "hits": m["hits"], "slots": slots, "unfilled": unfilled,
             "target_project": tp, "target_path": target_path, "target_via": via,
+            "source_project": implied_project,  # 도메인 intent 출처(dispatch 라우팅 키). user intent 면 None
             "committed_ambiguous": committed_ambiguous}
 
 
@@ -256,6 +265,103 @@ def cmd_ground(args):
     return 0
 
 
+def dispatch_to_project(r, projects, anchors, utterance):
+    """도메인 intent → 출처 프로젝트의 dispatch CLI(뒷단)에 subprocess 위임.
+
+    §11 배선: UUG 가 앞단(utterance→intent)을 끝낸 뒤, intent_id 를 그 프로젝트의
+    dispatch 진입점에 넘겨 GroundedCommand(slot→target→validate→turn)를 받는다.
+    경계 = 프로세스(subprocess). MSO 등 피호출 프로젝트는 UUG 를 모른다(단방향 의존).
+
+    반환: (grounded_command_dict, None) | (None, err_str).
+    dispatch 미선언 프로젝트면 (None, "no-dispatch") — 호출측이 UUG 자체 처리로 폴백.
+    """
+    proj = r.get("source_project")
+    spec = (projects.get(proj) or {}).get("dispatch") if proj else None
+    if not spec:
+        return None, "no-dispatch"
+    if spec.get("kind", "cli") != "cli":
+        return None, f"unsupported-dispatch-kind:{spec.get('kind')}"
+
+    root, err = resolve_one(proj, projects, anchors)
+    if err or not root:
+        return None, f"unresolved-project:{proj}:{err}"
+    entry = Path(root) / spec["entry"]
+    if not entry.exists():
+        return None, f"dispatch-entry-missing:{entry}"
+
+    import subprocess
+    cmd = [sys.executable, str(entry), "ground",
+           "--intent-id", r["intent_id"], "--utterance", utterance]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        return None, "dispatch-timeout"
+    if out.returncode != 0:
+        return None, f"dispatch-failed(rc={out.returncode}): {out.stderr.strip()[:200]}"
+    try:
+        return json.loads(out.stdout), None
+    except ValueError:
+        return None, f"dispatch-bad-json: {out.stdout.strip()[:200]}"
+
+
+def cmd_dispatch(args):
+    """end-to-end: 발화 → UUG ground(앞단) → 도메인이면 프로젝트 뒷단 CLI 위임 → GroundedCommand.
+
+    user intent(또는 dispatch 미선언 도메인)는 UUG 자체 grounding 결과를 출력한다.
+    """
+    sys.path.insert(0, str(SKILL_DIR / "src"))
+    try:
+        import lookup  # noqa: F401
+    except ImportError:
+        print("[ERROR] rdflib 필요 — pip install rdflib", file=sys.stderr)
+        return 1
+
+    r = _do_ground(args.utterance)
+    if r["status"] == "no-intent":
+        print("[dispatch] intent 미매칭 → 명시 필요 (HITL)")
+        return 2
+    if r["status"] == "ambiguous":
+        print("[dispatch] intent 모호(동점) — HITL 필요:")
+        for iid, h in r["candidates"]:
+            print(f"    {iid} (hits={h})")
+        return 2
+
+    projects, anchors = load_projects(), load_anchors()
+    grounded, err = dispatch_to_project(r, projects, anchors, args.utterance)
+
+    if grounded is not None:
+        # 도메인 프로젝트 뒷단이 완성한 GroundedCommand
+        if args.json:
+            print(json.dumps(grounded, ensure_ascii=False))
+        else:
+            print(f"[dispatch→{r['source_project']}] intent={grounded['intent_id']} "
+                  f"target={grounded.get('target_id')} tier={grounded.get('tier')}")
+            print(f"    slots = {grounded.get('slots')}")
+            if grounded.get("reprompt_needed"):
+                print(f"  → reprompt(HITL): {grounded.get('reprompt_slots')}")
+                return 2
+        return 0
+
+    if err != "no-dispatch":
+        # dispatch 선언은 있으나 실패 — 조용히 삼키지 않는다(배선/경로 drift 탐지)
+        print(f"[dispatch] 프로젝트 뒷단 위임 실패: {err}", file=sys.stderr)
+        return 1
+
+    # dispatch 미선언(user intent 등) → UUG 자체 grounding 결과 출력
+    if r["unfilled"]:
+        print(f"[dispatch] intent={r['intent_id']} slots={r['slots']} "
+              f"→ reprompt(HITL): {r['unfilled']}")
+        return 2
+    if args.json:
+        print(json.dumps({"intent_id": r["intent_id"], "slots": r["slots"],
+                          "target_project": r["target_project"], "tier": "UUG-local"},
+                         ensure_ascii=False))
+    else:
+        print(f"[dispatch] intent={r['intent_id']} (UUG-local) slots={r['slots']} "
+              f"target_project={r['target_project']}")
+    return 0
+
+
 def cmd_use(args):
     """현재 작업 프로젝트를 명시적으로 고정 (last_project) — 이후 신호0 발화 추론에 사용."""
     if args.project not in load_projects():
@@ -283,6 +389,9 @@ def main():
     s = sub.add_parser("ground"); s.add_argument("utterance")
     s.add_argument("--for-hook", action="store_true", help="hook 모드: 확신 시 1줄 주입, 아니면 침묵, 항상 exit 0")
     s.set_defaults(func=cmd_ground)
+    s = sub.add_parser("dispatch"); s.add_argument("utterance")
+    s.add_argument("--json", action="store_true", help="GroundedCommand 를 JSON 한 줄로 출력")
+    s.set_defaults(func=cmd_dispatch)
     s = sub.add_parser("use"); s.add_argument("project"); s.set_defaults(func=cmd_use)
     s = sub.add_parser("list"); s.set_defaults(func=cmd_list)
     args = ap.parse_args()
