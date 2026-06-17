@@ -128,20 +128,54 @@ def _match_project(utterance, projects):
     return scored
 
 
+def build_registries(projects, anchors):
+    """user 레지스트리 + projects.yaml 에 `intent_registry` 선언이 있는 프로젝트의
+    도메인 레지스트리(예: MSO intents.ttl)를 lookup 에 넘길 spec 리스트로 만든다.
+    spec: {path, source_project}. 경로 누락/미존재 프로젝트는 조용히 건너뛴다."""
+    sys.path.insert(0, str(SKILL_DIR / "src"))
+    import lookup
+    regs = [{"path": str(lookup.USER_INTENTS), "source_project": None}]
+    for name, p in projects.items():
+        rel = p.get("intent_registry")
+        if not rel:
+            continue
+        root, err = resolve_one(name, projects, anchors)
+        if err or not root:
+            print(f"[uug] intent_registry 선언됐으나 프로젝트 '{name}' 경로 미해소({err}) — 스킵",
+                  file=sys.stderr)
+            continue
+        ttl = Path(root) / rel
+        if ttl.exists():
+            regs.append({"path": str(ttl), "source_project": name})
+        else:
+            # 조용한 스킵 금지: 선언된 레지스트리 부재는 경고(개명/이동/drift 탐지).
+            print(f"[uug] intent_registry 미존재 — '{name}': {ttl} (도메인 intent 미로드)",
+                  file=sys.stderr)
+    return regs
+
+
 def _do_ground(utterance):
     """grounding 계산(출력 없음). dict 반환: status no-intent|ambiguous|incomplete|ok + 부가."""
     sys.path.insert(0, str(SKILL_DIR / "src"))
     import lookup  # rdflib
 
-    m = lookup.match_intent(utterance)
+    projects = load_projects()
+    anchors = load_anchors()
+    registries = build_registries(projects, anchors)
+    m = lookup.match_intent(utterance, registries=registries)
     intent = m["intent"]
     if intent is None:
         return {"status": "no-intent"}
-    if m["ambiguous"]:
+    # commit 정책 (§11.1 비회귀): 도메인 intent(source_project 有)는 동점이어도 top-1 commit
+    # — MSO router 의 first-match-wins decisiveness 와 동등(실측 fixture 84% ≥ MSO 80%).
+    # user intent 의 동점은 HITL 유지(보수적: 잘못된 프로젝트 추론 방지).
+    committed_ambiguous = bool(m["ambiguous"] and intent.get("source_project"))
+    if m["ambiguous"] and not intent.get("source_project"):
         return {"status": "ambiguous",
                 "candidates": [(iid, h) for iid, sc, h in m["candidates"] if sc == m["score"]]}
 
-    projects = load_projects()
+    # 도메인 intent(프로젝트 레지스트리 출처)는 target_project 가 출처로 함의된다.
+    implied_project = intent.get("source_project")
     proj_cands = _match_project(utterance, projects)
     sess = load_session()
     slots, unfilled = {}, []
@@ -158,17 +192,26 @@ def _do_ground(utterance):
         if req and slots[nm] is None:
             unfilled.append(nm)
 
-    tp = slots.get("target_project")
+    # 도메인 intent: target_project 미해소 시 출처 프로젝트로 채운다.
+    tp = slots.get("target_project") or implied_project
     target_path = None
     if tp:
         path, err = resolve_one(tp, projects, load_anchors())
         target_path = path if not err else None
         save_session(tp)   # last_project 갱신 (세션 추적)
-    via = "발화" if proj_cands and slots.get("target_project") == proj_cands[0][1] else ("last_project" if tp else None)
+    if implied_project and tp == implied_project:
+        via = "도메인-intent"
+    elif proj_cands and slots.get("target_project") == proj_cands[0][1]:
+        via = "발화"
+    elif tp:
+        via = "last_project"
+    else:
+        via = None
     return {"status": "incomplete" if unfilled else "ok",
             "intent_id": intent["intent_id"], "verb": intent["verb_concept"],
             "hits": m["hits"], "slots": slots, "unfilled": unfilled,
-            "target_project": tp, "target_path": target_path, "target_via": via}
+            "target_project": tp, "target_path": target_path, "target_via": via,
+            "committed_ambiguous": committed_ambiguous}
 
 
 def cmd_ground(args):

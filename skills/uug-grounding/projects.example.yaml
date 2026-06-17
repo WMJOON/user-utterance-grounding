@@ -6,6 +6,10 @@
 #   rel      : 앵커 상대경로.
 #   keywords : target_project 추론용 자연어 트리거 (발화에 이 단어 등장 시 이 프로젝트로 grounding).
 #   tags     : 분류용(선택).
+#   intent_registry : (선택) 그 프로젝트의 *도메인* intent TTL (프로젝트 루트 anchor+rel 상대경로).
+#                     선언 시 grounding 이 user intent + 그 도메인 intent 를 합쳐 ground 한다
+#                     (§11 멀티-레지스트리 브리지). 도메인 intent 가 매칭되면 target_project 함의.
+#                     레지스트리는 namespace 무관(술어 로컬명 기준) — MSO mso: 등 그대로 사용.
 # ※ 절대경로는 여기 두지 않는다 → machine.yaml(로컬)이 anchor→절대경로.
 # ※ intent 정의는 여기 아님 → instances/user_intents.ttl.
 
@@ -20,3 +24,12 @@ my-knowledge-base:
   rel: path/to/kb
   keywords: ["KB", "지식베이스", "노트"]
   tags: [example, knowledge-base]
+
+# 도메인 레지스트리 브리지 예시 — 이 프로젝트의 운영 intent(예: MSO dispatch_ticket)를
+# UUG 가 ground 할 수 있게 한다.
+my-orchestrator:
+  anchor: vault
+  rel: path/to/orchestrator
+  keywords: ["오케스트레이터", "티켓", "dispatch"]
+  tags: [example, orchestrator]
+  intent_registry: repository/skills/intent-registry/instances/intents.ttl
