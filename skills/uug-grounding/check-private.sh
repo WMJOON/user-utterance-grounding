@@ -22,8 +22,8 @@ while IFS= read -r f; do
   [ "$base" = "$SELF" ] && continue
   case "$base" in *.example.yaml | *.example.*) continue ;; esac
   [ -f "$f" ] || continue
-  if grep -qE 'iCloud~md~obsidian|/Users/(wmjoon|user)' "$f" 2>/dev/null; then
-    note "$f: vault 시그니처/실 사용자 홈 절대경로"
+  if grep -qE 'iCloud~md~obsidian|/Users/[a-z][a-z0-9._-]+' "$f" 2>/dev/null; then
+    note "$f: vault 시그니처/실 사용자 홈 절대경로 (placeholder 는 /Users/<you> 사용)"
   fi
   if grep -qE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' "$f" 2>/dev/null; then
     note "$f: 이메일 추정 ($(grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' "$f" | head -1))"
