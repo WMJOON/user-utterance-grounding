@@ -49,7 +49,7 @@ def load_anchors():
     """앵커(앵커명→절대경로) 해소. vault 앵커는 머신-무관하게 자가복구한다.
 
     machine.yaml 은 gitignore 지만 vault 가 iCloud 동기화 경로 안이면 머신 간에
-    복제되어 절대경로가 오염된다(user↔wmjoon 등). vault 는 코드가 그 안에
+    복제되어 절대경로가 오염된다(머신마다 홈 경로 다름). vault 는 코드가 그 안에
     살므로 .obsidian 마커로 런타임 도출이 항상 가능 → 저장값이 이 머신에 실재하지
     않으면 탐지값으로 덮어쓰고, 절대경로를 다시 persist 하지 않아 오염 고리를 끊는다.
     vault 밖 앵커(code/home 등)는 machine.yaml 저장값을 그대로 신뢰한다.
