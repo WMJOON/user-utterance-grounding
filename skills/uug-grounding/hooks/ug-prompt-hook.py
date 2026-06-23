@@ -5,7 +5,7 @@
 plain stdout 은 모델 컨텍스트에 주입된다(검증된 경로). 확신(target 해석)일 때만 1줄
 주입하고, 아니면 침묵 → 매 프롬프트 나그 방지. 항상 exit 0 (프롬프트 차단 안 함).
 
-등록(.claude/settings.json):
+등록(.claude/settings.json 또는 .codex/hooks.json):
   "UserPromptSubmit": [{"hooks": [{"type":"command",
      "command":"python3 <path>/hooks/ug-prompt-hook.py"}]}]
 의존성: ug.py + lookup.py (rdflib). 미설치/오류 시 조용히 통과.

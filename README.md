@@ -1,4 +1,4 @@
-# user-utterance-grounding (UUG) v0.0.1
+# user-utterance-grounding (UUG) v0.0.3
 
 UUG는 **사용자 발화·의도 중심의 크로스-프로젝트 grounding 도구**다 — [MSO](https://github.com/WMJOON/multi-swarm-orchestrator)의 user-side 대응.
 
@@ -21,6 +21,27 @@ UUG는 이 셋에 각각 대응한다.
 | 타깃 모호 | 발화 → intent → 타깃 프로젝트 **grounding** | `uug-grounding` |
 | 위치 표류 | 머신-무관 레지스트리 + 런타임 **자가복구** | `projects.yaml` 앵커 + `machine.yaml` + `.obsidian` 탐지 |
 | 기억·hand-off 부재 | user-scope **영속 기억** + 패턴 분석 | `uug-user-memory` · `uug-pattern-analytics` |
+
+---
+
+## v0.0.3 Codex UserPromptSubmit 적용
+
+v0.0.3은 Codex 공식 Hooks 문서에서 `UserPromptSubmit` 이벤트와 stdout context 주입이 지원됨을 확인하고, Codex에서도 UUG 자동 grounding 훅을 등록하도록 정정한 패치다.
+
+- `bash install.sh --codex`는 `~/.codex/skills/uug-grounding` 링크와 `~/.codex/hooks.json`의 `UserPromptSubmit` 훅을 함께 등록한다.
+- Codex의 `UserPromptSubmit`은 현재 `matcher`를 사용하지 않으므로 matcher 없이 등록한다.
+- 같은 `hooks/ug-prompt-hook.py`를 사용하되, Claude는 `~/.claude/skills/...`, Codex는 `~/.codex/skills/...` 경로로 호출한다.
+- 참고: [OpenAI Codex Hooks — UserPromptSubmit](https://developers.openai.com/codex/hooks#userpromptsubmit), [OpenAI Codex Hooks — Matcher patterns](https://developers.openai.com/codex/hooks#matcher-patterns)
+
+## v0.0.2 Provider-Free 적용
+
+v0.0.2는 Claude Code의 기존 `UserPromptSubmit` 기반 자동 grounding 성능을 유지하면서 Codex에서도 UUG 스킬셋을 사용할 수 있도록 설치/라우팅 경계를 정리한 패치다.
+
+- 기본 `install.sh` 동작은 기존과 동일하게 Claude Code 대상이다. `~/.claude/skills/uug-grounding` 링크와 `~/.claude/settings.json`의 `UserPromptSubmit` 훅을 유지한다.
+- Codex에서는 `bash install.sh --codex` 또는 글로벌 sync를 통해 `~/.codex/skills/uug-*` 링크를 설치한다.
+- v0.0.2 시점에는 Codex `UserPromptSubmit` 훅을 보수적으로 제외했으나, v0.0.3에서 공식 문서 기준으로 등록 경로를 추가했다.
+- `--all`은 Claude Code + Codex 링크와 자동 발화 훅을 함께 구성한다.
+- MSO와의 경계는 유지한다. UUG는 utterance→intent 앞단을 담당하고, intent→action 뒷단은 MSO 또는 각 프로젝트 dispatch가 담당한다.
 
 ---
 
@@ -96,6 +117,8 @@ cd skills/uug-grounding
 pip install rdflib pyyaml
 cp projects.example.yaml projects.yaml   # 본인 프로젝트 등록 (machine.yaml 은 vault 자동탐지로 생략 가능)
 bash install.sh                          # ~/.claude/skills 심링크 + UserPromptSubmit 훅 등록
+bash install.sh --codex                  # ~/.codex/skills 심링크 + Codex UserPromptSubmit 훅 등록
+bash install.sh --all                    # Claude Code + Codex 등록 (양쪽 UserPromptSubmit 훅)
 ```
 
 ```bash
@@ -132,7 +155,7 @@ PyYAML >= 6.0
 
 ---
 
-## 로드맵 (v0.0.1 이후)
+## 로드맵 (v0.0.3 이후)
 
 - **Lv30 LLM fallback**: keyword-miss(~20%) 발화의 LLM 복구 경로 (현재 Lv10 키워드 grounding만).
 - **횡단 패턴 → 엄브렐러 제안**: `uug-pattern-analytics`가 사용자가 N개 프로젝트를 반복 횡단하는 패턴을 관측해 "엄브렐러/모노로 합쳐 가로지르는 워크플로우 생성"을 **제안**(실행은 프로젝트가). 미구현.
