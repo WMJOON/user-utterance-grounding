@@ -30,6 +30,10 @@ MACHINE = SKILL_DIR / "machine.yaml"
 SESSION = Path(os.environ.get("UG_SESSION", SKILL_DIR / ".session.json"))
 
 
+def uug_disabled():
+    return os.environ.get("UUG_DISABLED") == "1" or os.environ.get("UUG_ENABLED") == "0"
+
+
 def _load_yaml(p, default):
     try:
         return yaml.safe_load(open(p, encoding="utf-8")) or default
@@ -225,6 +229,10 @@ def _do_ground(utterance):
 
 def cmd_ground(args):
     """발화 → intent(TTL) 분류 → slot fill(ask/session_context/default) → GroundedCommand."""
+    if uug_disabled():
+        if not getattr(args, "for_hook", False):
+            print("[uug] disabled by UUG_DISABLED=1 or UUG_ENABLED=0")
+        return 0
     sys.path.insert(0, str(SKILL_DIR / "src"))
     try:
         import lookup  # noqa: F401
@@ -309,6 +317,12 @@ def cmd_dispatch(args):
 
     user intent(또는 dispatch 미선언 도메인)는 UUG 자체 grounding 결과를 출력한다.
     """
+    if uug_disabled():
+        if args.json:
+            print(json.dumps({"status": "disabled", "tier": "UUG-disabled"}, ensure_ascii=False))
+        else:
+            print("[uug] disabled by UUG_DISABLED=1 or UUG_ENABLED=0")
+        return 0
     sys.path.insert(0, str(SKILL_DIR / "src"))
     try:
         import lookup  # noqa: F401

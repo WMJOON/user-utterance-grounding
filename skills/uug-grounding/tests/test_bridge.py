@@ -152,7 +152,7 @@ def test_dispatch_unresolved_project_errors_loudly():
     assert err is not None and err != "no-dispatch"
 
 
-# ─── 앞단 DoD 이전 (구 mso-utterance-grounding fixture_accuracy) ───
+# ─── 앞단 DoD 이전 (MSO v0.6.3: UUG utterance→intent accuracy) ───
 # §11: utterance→intent 정확도는 이제 UUG 책임. MSO 50-fixture top-1 ≥80%.
 _FIXTURE = Path(__file__).resolve().parent / "fixtures" / "mso_utterances_50.jsonl"
 

@@ -1,3 +1,4 @@
 # uug-user-memory 런타임
 pyyaml>=6.0
+rdflib>=7.0    # MSO workflow TTL을 읽어 drift를 판정할 때만 사용. UUG projection 정본은 JSONL.
 zvec>=0.1     # 시맨틱 검색(search/reindex). new/validate/graph 는 zvec 없이도 동작.

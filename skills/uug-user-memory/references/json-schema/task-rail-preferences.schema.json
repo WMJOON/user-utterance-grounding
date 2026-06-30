@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uug.dev/schema/task-rail-preferences.schema.json",
+  "title": "UUG Task Rail Preference",
+  "type": "object",
+  "required": ["record_type", "id", "repository", "intent", "rail", "usage_count"],
+  "properties": {
+    "record_type": { "const": "task_rail_preference" },
+    "id": { "type": "string" },
+    "repository": {
+      "type": "object",
+      "required": ["id", "repository_id", "repository_kind"],
+      "properties": {
+        "id": { "type": "string" },
+        "repository_id": { "type": "string" },
+        "repository_kind": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "intent": { "type": "string" },
+    "rail": {
+      "type": "object",
+      "properties": {
+        "workflow": { "type": "string" },
+        "node": { "type": "string" },
+        "edge": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "usage_count": { "type": "integer", "minimum": 0 },
+    "last_used_at": { "type": "string" },
+    "derived_from": { "type": "array", "items": { "type": "string" } },
+    "observed_entity_filling": { "type": "object", "additionalProperties": { "type": "object" } },
+    "adjusted_entity_filling": { "type": "object" },
+    "slot_adjustments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "slot_name", "adjusted_value", "adjustment_scope"],
+        "properties": {
+          "id": { "type": "string" },
+          "slot_name": { "type": "string" },
+          "adjusted_value": {},
+          "adjustment_scope": { "enum": ["node", "edge", "rail"] },
+          "target_node": { "type": "string" },
+          "target_edge": { "type": "string" },
+          "observed_value_distribution": { "type": "object" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "proposal_mode": { "type": "string" },
+    "decision_drift_status": { "type": "string" },
+    "bias_correction_status": { "type": "string" },
+    "drift_status": { "type": "string" }
+  },
+  "additionalProperties": true
+}

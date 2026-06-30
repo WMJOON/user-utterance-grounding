@@ -6,7 +6,7 @@
 #   1) 스킬을 ~/.{claude,codex}/skills/ 에 심링크 (경로 머신-무관: ~ 로 해석)
 #   2) UserPromptSubmit 훅을 provider 설정 파일에 등록 (merge, 멱등)
 # 에이전트는 이 스크립트를 *실행하지 않는다* — 설정 자기수정 가드 때문. 사용자가 실행.
-# 끄기: ~/.claude/settings.json 또는 ~/.codex/hooks.json 의 해당 UserPromptSubmit 블록 삭제 + 심링크 제거.
+# 끄기: ~/.claude/settings.json 또는 ~/.codex/config.toml 의 해당 UserPromptSubmit 블록 삭제 + 심링크 제거.
 set -euo pipefail
 
 SKILL_SRC="$(cd "$(dirname "$0")" && pwd)"
@@ -63,29 +63,79 @@ PY
 }
 
 install_codex_hook() {
+  local config_toml="$HOME/.codex/config.toml"
   local hooks_json="$HOME/.codex/hooks.json"
-  python3 - "$hooks_json" "$CODEX_HOOK_CMD" <<'PY'
-import json, os, sys
-hooks_path, cmd = sys.argv[1], sys.argv[2]
-os.makedirs(os.path.dirname(hooks_path), exist_ok=True)
+  python3 - "$config_toml" "$hooks_json" "$CODEX_HOOK_CMD" <<'PY'
+import json, os, re, sys
+config_path, hooks_path, cmd = sys.argv[1], sys.argv[2], sys.argv[3]
+os.makedirs(os.path.dirname(config_path), exist_ok=True)
+
+marker = "UUG_GROUNDING_HOOK"
+begin = f"# BEGIN {marker}"
+end = f"# END {marker}"
+
+try:
+    text = open(config_path, encoding="utf-8").read()
+except FileNotFoundError:
+    text = ""
+
+text = re.sub(rf"\n?# BEGIN {marker}\n.*?# END {marker}\n?", "\n", text, flags=re.S)
+lines = text.splitlines()
+for i, line in enumerate(lines):
+    if line.strip() == "[features]":
+        j = i + 1
+        while j < len(lines) and not lines[j].lstrip().startswith("["):
+            if lines[j].strip().startswith("hooks"):
+                lines[j] = "hooks = true"
+                break
+            j += 1
+        else:
+            lines.insert(i + 1, "hooks = true")
+        break
+else:
+    lines = ["[features]", "hooks = true", ""] + lines
+text = "\n".join(lines).rstrip() + "\n\n"
+
+block = f'''{begin}
+# Managed by uug-grounding install.sh --codex. Codex config.toml is canonical;
+# hooks.json is kept free of this hook to avoid duplicate UserPromptSubmit runs.
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = {json.dumps(cmd, ensure_ascii=False) if "'" in cmd else "'" + cmd + "'"}
+timeout = 15
+statusMessage = "Grounding user prompt"
+{end}
+'''
+open(config_path, "w", encoding="utf-8").write(text + block)
+print(f"[2] Codex UserPromptSubmit 훅 등록 → {config_path}")
+
+# v0.0.3 used hooks.json. Remove only this UUG command there so a runtime that
+# reads both surfaces does not execute the grounding hook twice.
 try:
     s = json.load(open(hooks_path, encoding="utf-8"))
 except (FileNotFoundError, ValueError):
-    s = {}
-ups = s.setdefault("hooks", {}).setdefault("UserPromptSubmit", [])
-if any(h.get("command") == cmd for g in ups for h in g.get("hooks", [])):
-    print("[2] Codex UserPromptSubmit 훅 이미 등록됨 — skip")
-else:
-    ups.append({
-        "hooks": [{
-            "type": "command",
-            "command": cmd,
-            "timeout": 15,
-            "statusMessage": "Grounding user prompt"
-        }]
-    })
+    sys.exit(0)
+hooks = s.get("hooks", {})
+groups = hooks.get("UserPromptSubmit", [])
+new_groups = []
+removed = False
+for group in groups:
+    kept = [h for h in group.get("hooks", []) if h.get("command") != cmd]
+    if len(kept) != len(group.get("hooks", [])):
+        removed = True
+    if kept:
+        g = dict(group)
+        g["hooks"] = kept
+        new_groups.append(g)
+if removed:
+    if new_groups:
+        hooks["UserPromptSubmit"] = new_groups
+    else:
+        hooks.pop("UserPromptSubmit", None)
     json.dump(s, open(hooks_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    print(f"[2] Codex UserPromptSubmit 훅 등록 → {hooks_path}")
+    print(f"[2] legacy Codex hooks.json UUG 훅 제거 → {hooks_path}")
 PY
 }
 

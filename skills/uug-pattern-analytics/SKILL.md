@@ -1,5 +1,6 @@
 ---
 name: uug-pattern-analytics
+version: "0.0.5"
 description: >
   사용자 발화/turns 패턴 탐지·분석. 발화를 uug-grounding 으로 분류해 intent 빈도·
   반복(워크플로우 패턴/마찰)을 측정하고 user-pattern(UP) 후보를 낸다. UP 는

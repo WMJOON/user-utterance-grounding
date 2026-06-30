@@ -1,4 +1,4 @@
-# user-utterance-grounding (UUG) v0.0.3
+# user-utterance-grounding (UUG) v0.0.5
 
 UUG는 **사용자 발화·의도 중심의 크로스-프로젝트 grounding 도구**다 — [MSO](https://github.com/WMJOON/multi-swarm-orchestrator)의 user-side 대응.
 
@@ -22,26 +22,40 @@ UUG는 이 셋에 각각 대응한다.
 | 위치 표류 | 머신-무관 레지스트리 + 런타임 **자가복구** | `projects.yaml` 앵커 + `machine.yaml` + `.obsidian` 탐지 |
 | 기억·hand-off 부재 | user-scope **영속 기억** + 패턴 분석 | `uug-user-memory` · `uug-pattern-analytics` |
 
+```mermaid
+flowchart TD
+    A["사용자 발화"] --> B{"UUG on/off"}
+    B -- "UUG_DISABLED=1<br/>또는 UUG_ENABLED=0" --> Z["no-op<br/>다른 repo 테스트 간섭 없음"]
+    B -- "enabled" --> C{"진입 경로"}
+
+    C -- "UserPromptSubmit hook" --> H{"UUG_HOOKS_DISABLED=1?"}
+    H -- "yes" --> Z
+    H -- "no" --> G["uug-grounding<br/>값전달 context 주입"]
+
+    C -- "CLI: ug ground / ug dispatch" --> G
+
+    G --> R["projects.yaml + machine.yaml<br/>프로젝트/앵커 해석"]
+    G --> I["intent TTL registry<br/>user intents + project domain intents"]
+    R --> M["match intent + target_project + slots"]
+    I --> M
+
+    M --> D{"intent 종류"}
+    D -- "user intent" --> U["UUG-local result<br/>record/search/propose"]
+    D -- "domain intent" --> P["project dispatch<br/>subprocess boundary"]
+    P --> MSO["MSO 등 프로젝트 뒷단<br/>intent→action / slot validation / workflow"]
+
+    U --> MEM["uug-user-memory<br/>UC / UP / UF JSONL"]
+    M --> ANA["uug-pattern-analytics<br/>반복 발화·패턴 후보"]
+    ANA --> MEM
+    MEM --> TR["task_rail_projection.py<br/>graph/task-rail-preferences.jsonl"]
+    TR --> PR["entity-filling proposal<br/>decision drift / bias correction signal"]
+```
+
 ---
 
-## v0.0.3 Codex UserPromptSubmit 적용
+## 변경 이력
 
-v0.0.3은 Codex 공식 Hooks 문서에서 `UserPromptSubmit` 이벤트와 stdout context 주입이 지원됨을 확인하고, Codex에서도 UUG 자동 grounding 훅을 등록하도록 정정한 패치다.
-
-- `bash install.sh --codex`는 `~/.codex/skills/uug-grounding` 링크와 `~/.codex/hooks.json`의 `UserPromptSubmit` 훅을 함께 등록한다.
-- Codex의 `UserPromptSubmit`은 현재 `matcher`를 사용하지 않으므로 matcher 없이 등록한다.
-- 같은 `hooks/ug-prompt-hook.py`를 사용하되, Claude는 `~/.claude/skills/...`, Codex는 `~/.codex/skills/...` 경로로 호출한다.
-- 참고: [OpenAI Codex Hooks — UserPromptSubmit](https://developers.openai.com/codex/hooks#userpromptsubmit), [OpenAI Codex Hooks — Matcher patterns](https://developers.openai.com/codex/hooks#matcher-patterns)
-
-## v0.0.2 Provider-Free 적용
-
-v0.0.2는 Claude Code의 기존 `UserPromptSubmit` 기반 자동 grounding 성능을 유지하면서 Codex에서도 UUG 스킬셋을 사용할 수 있도록 설치/라우팅 경계를 정리한 패치다.
-
-- 기본 `install.sh` 동작은 기존과 동일하게 Claude Code 대상이다. `~/.claude/skills/uug-grounding` 링크와 `~/.claude/settings.json`의 `UserPromptSubmit` 훅을 유지한다.
-- Codex에서는 `bash install.sh --codex` 또는 글로벌 sync를 통해 `~/.codex/skills/uug-*` 링크를 설치한다.
-- v0.0.2 시점에는 Codex `UserPromptSubmit` 훅을 보수적으로 제외했으나, v0.0.3에서 공식 문서 기준으로 등록 경로를 추가했다.
-- `--all`은 Claude Code + Codex 링크와 자동 발화 훅을 함께 구성한다.
-- MSO와의 경계는 유지한다. UUG는 utterance→intent 앞단을 담당하고, intent→action 뒷단은 MSO 또는 각 프로젝트 dispatch가 담당한다.
+릴리스별 변경 사항은 [docs/changelog.md](docs/changelog.md)에 둔다.
 
 ---
 
@@ -79,27 +93,12 @@ ug dispatch "ticket-217 재실행"
 
 ### 4. User-scope 영속 기억 + 패턴 분석
 
-- **uug-user-memory**: user-context/user-pattern/user-preference(UC/UP/UF)를 jsonl + 시맨틱 인덱스 + 그래프로 자산화한다. MSO work-memory의 schema-driven 엔진을 user 스코프로 재사용(스킬=엔진, 데이터=별도 레이어). "전에 이거 어떻게 하기로 했지?" 시맨틱 검색.
+- **uug-user-memory**: user-context/user-pattern/user-preference(UC/UP/UF)를 jsonl + 시맨틱 인덱스 + 그래프로 자산화한다. MSO work-memory의 schema-driven 엔진을 user 스코프로 재사용하지만 타입은 UC/UP/UF로 제한한다. project-scope worklog는 각 프로젝트가 소유한다. "전에 이거 어떻게 하기로 했지?" 시맨틱 검색.
 - **uug-pattern-analytics**: 발화→intent 빈도·반복(워크플로 패턴/마찰)을 측정해 user-pattern 후보를 낸다 → uug-user-memory로 기록, grounding 트리거 정련 신호로 환류. 크로스-프로젝트 user 발화 스트림 대상.
 
 ---
 
 ## 스킬팩 구성 (orchestration 패턴 — MSO/MSM 류)
-
-```
-사용자 발화
-    │
-    ▼
-uug-orchestration          ← 라우터/진입점 · 정책(scope 규율 · HITL · PII 가드)
-    │
-    ├──> uug-grounding          발화 → {target_project, intent, slots} · projects.yaml 레지스트리 · ug dispatch
-    │       ├─ user intent       → uug-user-memory(기록) / uug-pattern-analytics(분석)
-    │       └─ 도메인 intent      → ug dispatch: 프로젝트 뒷단 CLI subprocess (예: MSO pipeline.py)
-    │
-    ├──> uug-user-memory        UC/UP/UF 영속 (schema-driven wm 엔진 + bootstrap)
-    │
-    └──> uug-pattern-analytics  발화→intent 빈도·반복 → user-pattern 후보
-```
 
 | 스킬 | 역할 | 핵심 스크립트 | 상태 |
 |------|------|-----------|------|
@@ -137,6 +136,8 @@ ug use <project>                 # 현재 작업 프로젝트 고정 (선택)
 
 **Propose ≠ execute.** UUG는 발화를 ground·정렬하고 **제안**한다. 워크플로·액션의 **실행**은 각 프로젝트(MSO 등)가 소유한다. UUG는 워크플로우를 실행·관리하지 않는다. (§11 경계)
 
+**User memory ≠ project worklog.** UUG는 UC/UP/UF를 기록한다. workflow node 실행 기록, auditlog, worklog는 프로젝트 레이어의 책임이다. UserPromptSubmit hook은 기록 side effect 없이 grounding context만 주입한다.
+
 **Machine-portable.** 절대경로 하드코딩 없음 — `__file__`/`.obsidian` 자동탐지/env/anchor. iCloud 동기·멀티머신 안전.
 
 **Privacy-first.** 도구는 공개하되 **사용자 데이터는 사적**으로 — `projects.yaml`·`machine.yaml`·`.session.json`은 gitignore, 배포는 `*.example.yaml`만. push 전 `check-private.sh` PII 게이트(절대경로·이메일·vault 시그니처·추적된 사용자 데이터 차단).
@@ -155,7 +156,7 @@ PyYAML >= 6.0
 
 ---
 
-## 로드맵 (v0.0.3 이후)
+## 로드맵 (v0.0.5 이후)
 
 - **Lv30 LLM fallback**: keyword-miss(~20%) 발화의 LLM 복구 경로 (현재 Lv10 키워드 grounding만).
 - **횡단 패턴 → 엄브렐러 제안**: `uug-pattern-analytics`가 사용자가 N개 프로젝트를 반복 횡단하는 패턴을 관측해 "엄브렐러/모노로 합쳐 가로지르는 워크플로우 생성"을 **제안**(실행은 프로젝트가). 미구현.
