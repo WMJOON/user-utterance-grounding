@@ -29,6 +29,14 @@ enums:
       enum_value:  {description: "미리 정의된 값 목록 중 하나"}
       free_text:   {description: "자유 텍스트"}
 
+  ScopeEnum:
+    description: 후보 공간 위계 (UD-0001, candidate-bound grounding) — 안쪽일수록 좁은 공간
+    permissible_values:
+      meta:                    {description: "scope 무관 — 항상 후보 공간에 포함 (예: dialog_feedback, record-memory)"}
+      repository:              {description: "프로젝트 grounding·전환 — rail 활성 중 매칭되면 topic change 신호"}
+      workflow:                {description: "workflow 시작·조회·전환 — rail 활성 중 매칭되면 topic change 신호"}
+      workflow.executionRail:  {description: "실행 중 rail 제어 — 가장 좁은 공간"}
+
   FillPolicyEnum:
     description: 슬롯 채움 전략
     permissible_values:
@@ -59,6 +67,7 @@ classes:
       intent_id:          {identifier: true, required: true, description: "예: work-on-project"}
       verb_concept:       {required: true, description: "SKOS URI — uug:WorkVerb/CreateVerb/QueryVerb/UpdateVerb"}
       target_concept:     {required: true, description: "SKOS URI — uug:Project 등"}
+      scope:              {range: ScopeEnum, required: false, description: "후보 공간 위계 — 미선언 시 소비측 기본값 처리(비파괴)"}
       trigger_keywords:   {multivalued: true, description: "Lv10 rule 매칭 키워드(한국어 포함)"}
       slot_specs:         {range: SlotSpec, multivalued: true, inlined: true, description: "이 intent의 슬롯 명세"}
       example_utterances: {multivalued: true, description: "테스트·문서용 예시 발화"}

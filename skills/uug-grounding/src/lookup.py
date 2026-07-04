@@ -102,6 +102,9 @@ def _intent_to_dict(g: Graph, subj, source_project: str | None = None) -> dict:
         "trigger_keywords": _list("trigger_keywords"),
         "slot_specs":       slots,
         "source_project":   source_project,
+        # 후보 공간 위계 (UD-0001): meta|repository|workflow|workflow.executionRail.
+        # 미선언(도메인 레지스트리 등)이면 None — 후보 바인딩 정책은 후속, 지금은 노출만.
+        "scope":            _scalar("scope") or None,
     }
 
 

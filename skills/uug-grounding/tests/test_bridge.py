@@ -59,6 +59,13 @@ def test_user_intent_still_grounds_with_mso_loaded():
     assert m["intent"]["source_project"] is None
 
 
+def test_scope_absent_in_domain_registry_is_none():
+    """scope 미선언 레지스트리(MSO)는 None — 비파괴(소비측 기본값 처리, UD-0001)."""
+    intent = lookup.lookup_intent("query_audit_log", registries=_REGS)
+    assert intent is not None and intent["scope"] is None
+    assert lookup.lookup_intent("tidy-organize", registries=_REGS)["scope"] == "repository"
+
+
 def test_namespace_agnostic_slot_specs():
     """mso: slot_specs 도 로컬명 기준으로 읽힌다."""
     intent = lookup.lookup_intent("query_audit_log", registries=_REGS)

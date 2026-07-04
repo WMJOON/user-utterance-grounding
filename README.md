@@ -1,4 +1,4 @@
-# user-utterance-grounding (UUG) v0.0.5
+# user-utterance-grounding (UUG) v0.1.0
 
 UUG는 **사용자 발화·의도 중심의 크로스-프로젝트 grounding 도구**다 — [MSO](https://github.com/WMJOON/multi-swarm-orchestrator)의 user-side 대응.
 
@@ -156,8 +156,9 @@ PyYAML >= 6.0
 
 ---
 
-## 로드맵 (v0.0.5 이후)
+## 로드맵 (v0.1.0 이후)
 
+- **candidate-bound grounding 2단계**: scope 기반 후보 바인딩 + 세션 컨텍스트 스택({repository, workflow_id, rail_id} + expiry, MSO 발행 소비) + `meta.dialog_feedback` intent(referent 는 활성 컨텍스트가 해소) + topic change/excursion 전이 정책. v0.1.0 은 측정 축(margin·scope)만 노출.
 - **Lv30 LLM fallback**: keyword-miss(~20%) 발화의 LLM 복구 경로 (현재 Lv10 키워드 grounding만).
 - **횡단 패턴 → 엄브렐러 제안**: `uug-pattern-analytics`가 사용자가 N개 프로젝트를 반복 횡단하는 패턴을 관측해 "엄브렐러/모노로 합쳐 가로지르는 워크플로우 생성"을 **제안**(실행은 프로젝트가). 미구현.
 - **user-memory 데이터 레이어**: UC/UP/UF 영속 저장소 위치·이름 확정.

@@ -1,5 +1,30 @@
 # 변경 이력
 
+## v0.1.0 (2026-07-04) — candidate-bound grounding 1단계 (margin fallback + intent scope)
+
+> **grounding 판정에 top-2 margin 기반 unclear fallback 을 배선하고, intent taxonomy 에 후보 공간 위계(scope) 축을 도입했다.** minor bump 사유: grounding 결과 계약에 새 status(`unclear`)와 관측 필드가 추가되고, intent SoT 에 새 축(`uug:scope`)이 생겼다. 기본값은 전부 비회귀(기존 동작 동일) — 이번 릴리스는 측정·노출 레이어이며 후보 바인딩 정책은 2단계.
+
+### Added
+
+| 변경 | 내용 |
+|------|------|
+| top-2 margin 산출 | `lookup.match_intent` 가 `top2_score`/`margin`(top-1 − top-2, 후보 1개면 None)을 반환. `ambiguous` 는 `margin == 0` 의 파생값(하위호환). |
+| unclear fallback | `margin < 임계` 면 commit 대신 `status=unclear`(HITL, rc 2, 임계 창 내 후보 나열). 임계는 스코프별 env — `UG_UNCLEAR_MARGIN_USER`(기본 1: 동점만 HITL, 구 ambiguous 동일) / `UG_UNCLEAR_MARGIN_DOMAIN`(기본 0: 동점도 top-1 commit, MSO first-match-wins 비회귀, fixture 84% ≥ 80% 유지). |
+| margin 관측 | 동점 commit 은 `committed_low_margin`(구 `committed_ambiguous` 대체), `ug dispatch --json` 에 `uug_margin`/`uug_committed_low_margin` — uug-pattern-analytics 임계 튜닝 재료. |
+| intent scope 축 | `user_intents.ttl` 전 intent 에 `uug:scope` 선언(meta / repository / workflow / workflow.executionRail). `nlu_intent.yaml` 에 `ScopeEnum`. lookup 은 scope 노출만 — scope 미선언 레지스트리(도메인 등)는 `None`(비파괴). |
+
+### Design decisions (모노레포 working-memory/user-decision)
+
+| 결정 | 내용 |
+|------|------|
+| topicChange = scope 전이 | 별도 감지기가 아니라 rail 활성 중 발화가 repository/workflow scope 로 ground 되는 것 자체가 신호. repository/workflow intent 는 rail 활성 중에도 후보 공간에서 제거하지 않는다(escape 경로). (UD-0001) |
+| meta.dialog_feedback | "중단해"·"네" 류 짧은 제어 발화는 meta scope 이며 rail 이탈이 아니다 — referent 는 활성 컨텍스트가 해소. (UD-0002) |
+| excursion | rail 진행 중 read-only 조회는 taxonomy 이동 없이 전이 정책 `f(scope, verb_class, rail 활성)` 로 처리 — QueryVerb=excursion(복귀), 변경 verb=topic change(HITL). (UD-0002) |
+
+### 실측 근거
+
+fixture 50발화: 오답은 margin 0(동점)에 집중(4/12), margin ≥ 1 은 전건 정답(2/2) → 기본 임계 상향은 무익. margin 해상도 확보(키워드 가중/edge count)가 2단계 선행 과제.
+
 ## v0.0.5 (2026-06-30) — MSO v0.6.3 user-scope 정렬
 
 > **MSO v0.6.3의 Stop reminder throttle을 UUG 경계에 맞춰 해석하고, user-memory projection을 JSONL-first로 정리했다.** UUG는 UserPromptSubmit 값전달과 user-scope preference/proposal을 담당하며, MSO workflow/task rail/slot spec은 수정하지 않는다.

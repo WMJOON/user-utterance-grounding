@@ -31,7 +31,7 @@ python3 scripts/ug.py list              # 등록 프로젝트
 
 | 파일 | 싱크 | 역할 |
 |---|---|---|
-| `instances/user_intents.ttl` | 싱크됨 | **★ intent SoT (엄밀 TTL)** — intent + slot_specs + trigger_keywords |
+| `instances/user_intents.ttl` | 싱크됨 | **★ intent SoT (엄밀 TTL)** — intent + slot_specs + trigger_keywords + `scope`(후보 공간 위계: meta/repository/workflow/workflow.executionRail, UD-0001. 현재는 lookup 노출만 — 후보 바인딩 정책은 후속) |
 | `references/schemas/nlu_intent.yaml` | 싱크됨 | LinkML schema (OWL/SHACL/JSON-schema 생성용) |
 | `taxonomy/*.ttl` | 싱크됨 | SKOS verb/target 위계 |
 | `src/lookup.py` | 싱크됨 | RDFLib 소비 API (`list_intents`/`lookup_intent`/`match_intent`) |

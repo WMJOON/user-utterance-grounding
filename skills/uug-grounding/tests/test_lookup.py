@@ -19,6 +19,16 @@ def test_every_intent_has_target_project_slot():
         assert "target_project" in names, f"{intent['intent_id']} missing target_project slot"
 
 
+def test_every_user_intent_declares_scope():
+    """UD-0001: user 레지스트리 intent 는 전부 scope 를 선언한다."""
+    valid = {"meta", "repository", "workflow", "workflow.executionRail"}
+    by_id = {i["intent_id"]: i["scope"] for i in lookup.list_intents()}
+    assert set(by_id.values()) <= valid, by_id
+    assert by_id["record-memory"] == "meta"          # dialog/컨텍스트 무관 기록
+    assert by_id["work-on-project"] == "repository"
+    assert by_id["tidy-organize"] == "repository"
+
+
 def test_match_intent_basic():
     assert lookup.match_intent("이 개념 KB에 추가해줘")["intent"]["intent_id"] == "add-to-knowledge"
     assert lookup.match_intent("이거 착수하자")["intent"]["intent_id"] == "work-on-project"
