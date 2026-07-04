@@ -97,18 +97,20 @@ def test_commit_policy_domain_intent_no_hitl():
     r = ug._do_ground("ticket-217 재실행")
     assert r["status"] in ("ok", "incomplete"), f"도메인 intent 가 HITL 로 빠짐: {r['status']}"
     assert r["intent_id"] == "dispatch_ticket"
-    assert r["committed_ambiguous"] is True
+    assert r["margin"] == 0
+    assert r["committed_low_margin"] is True
     assert r["target_project"] == "multi-swarm-orchestrator"
 
 
 def test_commit_policy_user_tie_stays_hitl():
-    """user intent 동점은 commit 정책 미적용 — HITL 유지(보수성)."""
+    """user intent 동점(margin 0 < user 임계 1)은 commit 정책 미적용 — HITL 유지(보수성)."""
     # user 레지스트리만으로도 동점 발생하는 발화 (정리=tidy, 기록=record)
     m = lookup.match_intent("정리 기록")
-    assert m["ambiguous"] is True
+    assert m["margin"] == 0 and m["ambiguous"] is True
     assert m["intent"]["source_project"] is None
     r = ug._do_ground("정리 기록")
-    assert r["status"] == "ambiguous"
+    assert r["status"] == "unclear"
+    assert r["margin"] == 0 and r["threshold"] == 1
 
 
 # ─── §11 배선: UUG→프로젝트(MSO) end-to-end dispatch (전제 #2 실호출) ───

@@ -26,7 +26,32 @@ def test_match_intent_basic():
 
 
 def test_match_intent_no_match():
-    assert lookup.match_intent("점심 뭐먹지")["intent"] is None
+    m = lookup.match_intent("점심 뭐먹지")
+    assert m["intent"] is None
+    assert m["top2_score"] is None and m["margin"] is None
+
+
+def test_match_intent_margin_solo():
+    """후보 1개 → 경쟁 없음: margin None."""
+    m = lookup.match_intent("착수하자")
+    assert m["intent"]["intent_id"] == "work-on-project"
+    assert m["top2_score"] is None and m["margin"] is None
+    assert m["ambiguous"] is False
+
+
+def test_match_intent_margin_tie():
+    """동점(정리=tidy 1 vs 기록=record 1) → margin 0 = ambiguous."""
+    m = lookup.match_intent("정리 기록")
+    assert m["margin"] == 0 and m["top2_score"] == m["score"]
+    assert m["ambiguous"] is True
+
+
+def test_match_intent_margin_one():
+    """근소 우세(tidy 2 hits vs record 1 hit) → margin 1, ambiguous 아님."""
+    m = lookup.match_intent("기록 정리하자")
+    assert m["intent"]["intent_id"] == "tidy-organize"
+    assert m["score"] == 2 and m["top2_score"] == 1 and m["margin"] == 1
+    assert m["ambiguous"] is False
 
 
 def test_add_to_knowledge_target_default():

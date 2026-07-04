@@ -166,8 +166,28 @@ def build_registries(projects, anchors):
     return regs
 
 
+# unclear fallback 임계: top-2 margin(top-1 − top-2 점수) < 임계 → commit 대신 HITL.
+# 기본값은 §11.1 비회귀 —
+#   user   1: 동점(margin 0)만 unclear (구 ambiguous 동작과 동일. 잘못된 프로젝트 추론 방지)
+#   domain 0: 동점도 top-1 commit (MSO first-match-wins decisiveness, 실측 fixture 84% ≥ 80%)
+# 실측(tests/fixtures/mso_utterances_50.jsonl): 오답은 margin 0 에 집중, margin ≥ 1 은 전건
+# 정답 → 기본 임계 상향은 무익. 키워드 가중 스코어링으로 margin 해상도 확보 후 재검토.
+UNCLEAR_MARGIN_USER = 1
+UNCLEAR_MARGIN_DOMAIN = 0
+
+
+def _margin_threshold(is_domain):
+    """스코프별 unclear 임계. env 로 실험/튜닝 override 가능."""
+    var = "UG_UNCLEAR_MARGIN_DOMAIN" if is_domain else "UG_UNCLEAR_MARGIN_USER"
+    default = UNCLEAR_MARGIN_DOMAIN if is_domain else UNCLEAR_MARGIN_USER
+    try:
+        return int(os.environ.get(var, default))
+    except ValueError:
+        return default
+
+
 def _do_ground(utterance):
-    """grounding 계산(출력 없음). dict 반환: status no-intent|ambiguous|incomplete|ok + 부가."""
+    """grounding 계산(출력 없음). dict 반환: status no-intent|unclear|incomplete|ok + 부가."""
     sys.path.insert(0, str(SKILL_DIR / "src"))
     import lookup  # rdflib
 
@@ -178,13 +198,16 @@ def _do_ground(utterance):
     intent = m["intent"]
     if intent is None:
         return {"status": "no-intent"}
-    # commit 정책 (§11.1 비회귀): 도메인 intent(source_project 有)는 동점이어도 top-1 commit
-    # — MSO router 의 first-match-wins decisiveness 와 동등(실측 fixture 84% ≥ MSO 80%).
-    # user intent 의 동점은 HITL 유지(보수적: 잘못된 프로젝트 추론 방지).
-    committed_ambiguous = bool(m["ambiguous"] and intent.get("source_project"))
-    if m["ambiguous"] and not intent.get("source_project"):
-        return {"status": "ambiguous",
-                "candidates": [(iid, h) for iid, sc, h in m["candidates"] if sc == m["score"]]}
+    margin = m["margin"]
+    threshold = _margin_threshold(bool(intent.get("source_project")))
+    if margin is not None and margin < threshold:
+        # 후보는 임계 창 안(top 점수와의 차 < 임계)만 노출 — 기본 임계 1에선 동점만.
+        return {"status": "unclear", "margin": margin, "threshold": threshold,
+                "candidates": [(iid, sc, h) for iid, sc, h in m["candidates"]
+                               if m["score"] - sc < threshold]}
+    # 동점(margin 0)인데 commit 된 경우 관측 플래그 — 기본 임계에선 도메인 intent 만 해당
+    # (§11.1 first-match-wins). uug-pattern-analytics 의 임계 튜닝 재료.
+    committed_low_margin = margin == 0
 
     # 도메인 intent(프로젝트 레지스트리 출처)는 target_project 가 출처로 함의된다.
     implied_project = intent.get("source_project")
@@ -224,7 +247,8 @@ def _do_ground(utterance):
             "hits": m["hits"], "slots": slots, "unfilled": unfilled,
             "target_project": tp, "target_path": target_path, "target_via": via,
             "source_project": implied_project,  # 도메인 intent 출처(dispatch 라우팅 키). user intent 면 None
-            "committed_ambiguous": committed_ambiguous}
+            "margin": margin,
+            "committed_low_margin": committed_low_margin}
 
 
 def cmd_ground(args):
@@ -255,10 +279,10 @@ def cmd_ground(args):
     if r["status"] == "no-intent":
         print("[ground] intent 미매칭 → 명시 필요 (HITL)")
         return 2
-    if r["status"] == "ambiguous":
-        print("[ground] intent 모호(동점) — HITL 필요:")
-        for iid, h in r["candidates"]:
-            print(f"    {iid} (hits={h})")
+    if r["status"] == "unclear":
+        print(f"[ground] intent 불명확(top-2 margin={r['margin']} < {r['threshold']}) — HITL 필요:")
+        for iid, sc, h in r["candidates"]:
+            print(f"    {iid} (score={sc}, hits={h})")
         return 2
     print(f"[ground] intent={r['intent_id']} (verb={r['verb']}, hits={r['hits']})")
     for nm, v in r["slots"].items():
@@ -334,10 +358,10 @@ def cmd_dispatch(args):
     if r["status"] == "no-intent":
         print("[dispatch] intent 미매칭 → 명시 필요 (HITL)")
         return 2
-    if r["status"] == "ambiguous":
-        print("[dispatch] intent 모호(동점) — HITL 필요:")
-        for iid, h in r["candidates"]:
-            print(f"    {iid} (hits={h})")
+    if r["status"] == "unclear":
+        print(f"[dispatch] intent 불명확(top-2 margin={r['margin']} < {r['threshold']}) — HITL 필요:")
+        for iid, sc, h in r["candidates"]:
+            print(f"    {iid} (score={sc}, hits={h})")
         return 2
 
     projects, anchors = load_projects(), load_anchors()
@@ -346,6 +370,9 @@ def cmd_dispatch(args):
     if grounded is not None:
         # 도메인 프로젝트 뒷단이 완성한 GroundedCommand
         if args.json:
+            # UUG 앞단 관측값(margin) 부착 — uug-pattern-analytics 임계 튜닝 재료 (uug_ 접두 additive)
+            grounded.setdefault("uug_margin", r["margin"])
+            grounded.setdefault("uug_committed_low_margin", r["committed_low_margin"])
             print(json.dumps(grounded, ensure_ascii=False))
         else:
             print(f"[dispatch→{r['source_project']}] intent={grounded['intent_id']} "
@@ -368,7 +395,9 @@ def cmd_dispatch(args):
         return 2
     if args.json:
         print(json.dumps({"intent_id": r["intent_id"], "slots": r["slots"],
-                          "target_project": r["target_project"], "tier": "UUG-local"},
+                          "target_project": r["target_project"], "tier": "UUG-local",
+                          "uug_margin": r["margin"],
+                          "uug_committed_low_margin": r["committed_low_margin"]},
                          ensure_ascii=False))
     else:
         print(f"[dispatch] intent={r['intent_id']} (UUG-local) slots={r['slots']} "

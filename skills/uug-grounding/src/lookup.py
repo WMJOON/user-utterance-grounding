@@ -146,7 +146,10 @@ def match_intent(utterance: str, registries=None) -> dict:
     registries=None → user 레지스트리만 (하위호환). 프로젝트 레지스트리를 넘기면
     그 도메인 intent(예: MSO dispatch_ticket)까지 합쳐서 점수화한다.
     Returns: {"intent": dict|None, "score": int, "hits": [...],
-              "candidates": [(id, score, hits)...], "ambiguous": bool}
+              "candidates": [(id, score, hits)...],
+              "top2_score": int|None, "margin": int|None, "ambiguous": bool}
+    margin = top-1 점수 − top-2 점수 (후보 1개면 None = 경쟁 없음).
+    unclear/commit 판정은 여기서 하지 않는다 — ug.py 정책 레이어의 몫.
     """
     utt = utterance.lower()
     scored = []
@@ -156,13 +159,17 @@ def match_intent(utterance: str, registries=None) -> dict:
             scored.append((len(hits), intent["intent_id"], hits, intent))
     scored.sort(key=lambda x: (-x[0], x[1]))
     if not scored:
-        return {"intent": None, "score": 0, "hits": [], "candidates": [], "ambiguous": False}
+        return {"intent": None, "score": 0, "hits": [], "candidates": [],
+                "top2_score": None, "margin": None, "ambiguous": False}
     top = scored[0]
-    ties = [s for s in scored if s[0] == top[0]]
+    top2_score = scored[1][0] if len(scored) > 1 else None
+    margin = None if top2_score is None else top[0] - top2_score
     return {
         "intent": top[3],
         "score": top[0],
         "hits": top[2],
         "candidates": [(s[1], s[0], s[2]) for s in scored],
-        "ambiguous": len(ties) > 1,
+        "top2_score": top2_score,
+        "margin": margin,
+        "ambiguous": margin == 0,
     }
