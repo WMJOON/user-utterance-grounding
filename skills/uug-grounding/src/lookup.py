@@ -152,7 +152,7 @@ def match_intent(utterance: str, registries=None) -> dict:
               "candidates": [(id, score, hits)...],
               "top2_score": int|None, "margin": int|None, "ambiguous": bool}
     margin = top-1 점수 − top-2 점수 (후보 1개면 None = 경쟁 없음).
-    unclear/commit 판정은 여기서 하지 않는다 — ug.py 정책 레이어의 몫.
+    ambiguous/commit 판정은 여기서 하지 않는다 — ug.py 정책 레이어의 몫.
     """
     utt = utterance.lower()
     scored = []

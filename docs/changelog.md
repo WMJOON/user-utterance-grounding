@@ -2,14 +2,14 @@
 
 ## v0.1.0 (2026-07-04) — candidate-bound grounding 1단계 (margin fallback + intent scope)
 
-> **grounding 판정에 top-2 margin 기반 unclear fallback 을 배선하고, intent taxonomy 에 후보 공간 위계(scope) 축을 도입했다.** minor bump 사유: grounding 결과 계약에 새 status(`unclear`)와 관측 필드가 추가되고, intent SoT 에 새 축(`uug:scope`)이 생겼다. 기본값은 전부 비회귀(기존 동작 동일) — 이번 릴리스는 측정·노출 레이어이며 후보 바인딩 정책은 2단계.
+> **grounding 판정에 top-2 margin 기반 ambiguous fallback 을 배선하고, intent taxonomy 에 후보 공간 위계(scope) 축을 도입했다.** minor bump 사유: grounding 결과 계약에 새 status(`ambiguous`)와 관측 필드가 추가되고, intent SoT 에 새 축(`uug:scope`)이 생겼다. 기본값은 전부 비회귀(기존 동작 동일) — 이번 릴리스는 측정·노출 레이어이며 후보 바인딩 정책은 2단계.
 
 ### Added
 
 | 변경 | 내용 |
 |------|------|
 | top-2 margin 산출 | `lookup.match_intent` 가 `top2_score`/`margin`(top-1 − top-2, 후보 1개면 None)을 반환. `ambiguous` 는 `margin == 0` 의 파생값(하위호환). |
-| unclear fallback | `margin < 임계` 면 commit 대신 `status=unclear`(HITL, rc 2, 임계 창 내 후보 나열). 임계는 스코프별 env — `UG_UNCLEAR_MARGIN_USER`(기본 1: 동점만 HITL, 구 ambiguous 동일) / `UG_UNCLEAR_MARGIN_DOMAIN`(기본 0: 동점도 top-1 commit, MSO first-match-wins 비회귀, fixture 84% ≥ 80% 유지). |
+| ambiguous fallback | `margin < 임계` 면 commit 대신 `status=ambiguous`(HITL, rc 2, 임계 창 내 후보 나열). 임계는 스코프별 env — `UG_AMBIGUOUS_MARGIN_USER`(기본 1: 동점만 HITL, 구 ambiguous 동일) / `UG_AMBIGUOUS_MARGIN_DOMAIN`(기본 0: 동점도 top-1 commit, MSO first-match-wins 비회귀, fixture 84% ≥ 80% 유지). |
 | margin 관측 | 동점 commit 은 `committed_low_margin`(구 `committed_ambiguous` 대체), `ug dispatch --json` 에 `uug_margin`/`uug_committed_low_margin` — uug-pattern-analytics 임계 튜닝 재료. |
 | intent scope 축 | `user_intents.ttl` 전 intent 에 `uug:scope` 선언(meta / repository / workflow / workflow.executionRail). `nlu_intent.yaml` 에 `ScopeEnum`. lookup 은 scope 노출만 — scope 미선언 레지스트리(도메인 등)는 `None`(비파괴). |
 

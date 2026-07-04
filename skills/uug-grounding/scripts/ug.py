@@ -166,20 +166,20 @@ def build_registries(projects, anchors):
     return regs
 
 
-# unclear fallback 임계: top-2 margin(top-1 − top-2 점수) < 임계 → commit 대신 HITL.
+# ambiguous fallback 임계: top-2 margin(top-1 − top-2 점수) < 임계 → commit 대신 HITL.
 # 기본값은 §11.1 비회귀 —
-#   user   1: 동점(margin 0)만 unclear (구 ambiguous 동작과 동일. 잘못된 프로젝트 추론 방지)
+#   user   1: 동점(margin 0)만 ambiguous (v0.1.0 이전 동작과 동일. 잘못된 프로젝트 추론 방지)
 #   domain 0: 동점도 top-1 commit (MSO first-match-wins decisiveness, 실측 fixture 84% ≥ 80%)
 # 실측(tests/fixtures/mso_utterances_50.jsonl): 오답은 margin 0 에 집중, margin ≥ 1 은 전건
 # 정답 → 기본 임계 상향은 무익. 키워드 가중 스코어링으로 margin 해상도 확보 후 재검토.
-UNCLEAR_MARGIN_USER = 1
-UNCLEAR_MARGIN_DOMAIN = 0
+AMBIGUOUS_MARGIN_USER = 1
+AMBIGUOUS_MARGIN_DOMAIN = 0
 
 
 def _margin_threshold(is_domain):
-    """스코프별 unclear 임계. env 로 실험/튜닝 override 가능."""
-    var = "UG_UNCLEAR_MARGIN_DOMAIN" if is_domain else "UG_UNCLEAR_MARGIN_USER"
-    default = UNCLEAR_MARGIN_DOMAIN if is_domain else UNCLEAR_MARGIN_USER
+    """스코프별 ambiguous 임계. env 로 실험/튜닝 override 가능."""
+    var = "UG_AMBIGUOUS_MARGIN_DOMAIN" if is_domain else "UG_AMBIGUOUS_MARGIN_USER"
+    default = AMBIGUOUS_MARGIN_DOMAIN if is_domain else AMBIGUOUS_MARGIN_USER
     try:
         return int(os.environ.get(var, default))
     except ValueError:
@@ -187,7 +187,7 @@ def _margin_threshold(is_domain):
 
 
 def _do_ground(utterance):
-    """grounding 계산(출력 없음). dict 반환: status no-intent|unclear|incomplete|ok + 부가."""
+    """grounding 계산(출력 없음). dict 반환: status no-intent|ambiguous|incomplete|ok + 부가."""
     sys.path.insert(0, str(SKILL_DIR / "src"))
     import lookup  # rdflib
 
@@ -202,7 +202,7 @@ def _do_ground(utterance):
     threshold = _margin_threshold(bool(intent.get("source_project")))
     if margin is not None and margin < threshold:
         # 후보는 임계 창 안(top 점수와의 차 < 임계)만 노출 — 기본 임계 1에선 동점만.
-        return {"status": "unclear", "margin": margin, "threshold": threshold,
+        return {"status": "ambiguous", "margin": margin, "threshold": threshold,
                 "candidates": [(iid, sc, h) for iid, sc, h in m["candidates"]
                                if m["score"] - sc < threshold]}
     # 동점(margin 0)인데 commit 된 경우 관측 플래그 — 기본 임계에선 도메인 intent 만 해당
@@ -279,8 +279,8 @@ def cmd_ground(args):
     if r["status"] == "no-intent":
         print("[ground] intent 미매칭 → 명시 필요 (HITL)")
         return 2
-    if r["status"] == "unclear":
-        print(f"[ground] intent 불명확(top-2 margin={r['margin']} < {r['threshold']}) — HITL 필요:")
+    if r["status"] == "ambiguous":
+        print(f"[ground] intent 모호(top-2 margin={r['margin']} < {r['threshold']}) — HITL 필요:")
         for iid, sc, h in r["candidates"]:
             print(f"    {iid} (score={sc}, hits={h})")
         return 2
@@ -358,8 +358,8 @@ def cmd_dispatch(args):
     if r["status"] == "no-intent":
         print("[dispatch] intent 미매칭 → 명시 필요 (HITL)")
         return 2
-    if r["status"] == "unclear":
-        print(f"[dispatch] intent 불명확(top-2 margin={r['margin']} < {r['threshold']}) — HITL 필요:")
+    if r["status"] == "ambiguous":
+        print(f"[dispatch] intent 모호(top-2 margin={r['margin']} < {r['threshold']}) — HITL 필요:")
         for iid, sc, h in r["candidates"]:
             print(f"    {iid} (score={sc}, hits={h})")
         return 2

@@ -116,7 +116,7 @@ def test_commit_policy_user_tie_stays_hitl():
     assert m["margin"] == 0 and m["ambiguous"] is True
     assert m["intent"]["source_project"] is None
     r = ug._do_ground("정리 기록")
-    assert r["status"] == "unclear"
+    assert r["status"] == "ambiguous"
     assert r["margin"] == 0 and r["threshold"] == 1
 
 
