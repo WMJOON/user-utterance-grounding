@@ -1,5 +1,19 @@
 # 변경 이력
 
+## v0.2.0 (2026-07-22) — `ground --json` 추가 (dispatch 미경유 값전달)
+
+> **`ug.py ground`에 `--json` 출력 모드를 추가했다.** minor bump 사유: 새 CLI 계약 표면(플래그) 추가(하위호환, 비파괴) — 기존 `ground`/`--for-hook` 동작은 그대로다. `intent_id`/`target_project`/`target_path`만 필요한 소비자(예: 프로젝트별 uug-context-hook)가 `dispatch`(도메인 프로젝트 뒷단 위임, nested subprocess)를 거치지 않고 `_do_ground()` 결과를 그대로 받을 수 있다.
+
+### Added
+
+| 변경 | 내용 |
+|------|------|
+| `ground --json` | `_do_ground()` 결과 dict를 한 줄 JSON으로 출력. `dispatch_to_project()`를 전혀 거치지 않는다(그건 `dispatch` 전용 경로). status가 `no-intent`/`ambiguous`면 rc=2, 그 외 rc=0 — `dispatch --json`과 동일한 관례. |
+
+### 배경
+
+프로젝트별 `uug-context-hook.py`(work-on-project 넛지)는 지금까지 `dispatch --json` + `resolve` 두 단계를 썼다. 이 훅이 필터링하는 intent(기본 `work-on-project`)는 항상 user-scope(도메인 아님)라 `dispatch_to_project()`의 도메인 위임 결과는 매번 버려지는데도, 엉뚱한 도메인 intent가 매칭될 때마다 nested subprocess(v0.1.1로 8s 상한)를 대가로 치렀다. `ground --json` 한 번으로 필요한 값을 모두 얻어 이 비용을 없앤다.
+
 ## v0.1.1 (2026-07-22) — dispatch 내부 subprocess 타임아웃 정합성 수정
 
 > **`ug dispatch`가 도메인 프로젝트 뒷단(예: MSO pipeline.py)에 위임할 때 쓰던 inner subprocess timeout을 30s → 8s로 낮췄다.** patch bump 사유: 계약·스키마 변경 없는 안정성 수정. 호출측(uug-context-hook.py 등 UserPromptSubmit 훅)이 `ug.py dispatch`를 outer timeout=10s로 감싸는 것을 전제로 하는데, inner가 30s였던 탓에 도메인 dispatch가 오래 걸리는 발화에서 훅이 outer가 강제 종료할 때까지 불필요하게 붙잡혀 매 프롬프트 지연(최대 관측치 30s)을 유발했다.

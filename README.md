@@ -1,4 +1,4 @@
-# user-utterance-grounding (UUG) v0.1.1
+# user-utterance-grounding (UUG) v0.2.0
 
 UUG는 **사용자 발화·의도 중심의 크로스-프로젝트 grounding 도구**다 — [MSO](https://github.com/WMJOON/multi-swarm-orchestrator)의 user-side 대응.
 

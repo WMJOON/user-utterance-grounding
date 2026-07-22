@@ -275,6 +275,13 @@ def cmd_ground(args):
                   f"target_project={r['target_project']} ({r['target_via']}). 다르면 프로젝트를 명시하세요.")
         return 0
 
+    # ── json 모드: _do_ground() 결과를 그대로 한 줄 JSON 으로. dispatch_to_project 를
+    # 거치지 않는다(도메인 프로젝트 뒷단 위임은 dispatch 전용) — hook 등 intent_id/
+    # target_project 만 필요한 소비자가 dispatch 의 nested subprocess 비용 없이 쓰라고 존재.
+    if getattr(args, "json", False):
+        print(json.dumps(r, ensure_ascii=False))
+        return 2 if r["status"] in ("no-intent", "ambiguous") else 0
+
     # ── 일반(verbose) 모드 ──
     if r["status"] == "no-intent":
         print("[ground] intent 미매칭 → 명시 필요 (HITL)")
@@ -434,6 +441,7 @@ def main():
     s = sub.add_parser("doctor"); s.set_defaults(func=cmd_doctor)
     s = sub.add_parser("ground"); s.add_argument("utterance")
     s.add_argument("--for-hook", action="store_true", help="hook 모드: 확신 시 1줄 주입, 아니면 침묵, 항상 exit 0")
+    s.add_argument("--json", action="store_true", help="_do_ground() 결과를 JSON 한 줄로 출력 (dispatch_to_project 미경유)")
     s.set_defaults(func=cmd_ground)
     s = sub.add_parser("dispatch"); s.add_argument("utterance")
     s.add_argument("--json", action="store_true", help="GroundedCommand 를 JSON 한 줄로 출력")
