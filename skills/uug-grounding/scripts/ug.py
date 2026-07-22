@@ -324,8 +324,11 @@ def dispatch_to_project(r, projects, anchors, utterance):
     import subprocess
     cmd = [sys.executable, str(entry), "ground",
            "--intent-id", r["intent_id"], "--utterance", utterance]
+    # uug-context-hook.py 등 호출측이 `ug.py dispatch`를 outer timeout=10s로 감싸는 것을
+    # 전제로 한다. inner timeout이 outer보다 크면(과거 30s) outer가 SIGTERM으로 강제
+    # 종료할 때까지 이 프로세스가 불필요하게 오래 붙잡혀 있어 훅 지연의 원인이 된다.
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
     except subprocess.TimeoutExpired:
         return None, "dispatch-timeout"
     if out.returncode != 0:

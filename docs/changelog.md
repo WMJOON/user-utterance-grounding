@@ -1,5 +1,15 @@
 # 변경 이력
 
+## v0.1.1 (2026-07-22) — dispatch 내부 subprocess 타임아웃 정합성 수정
+
+> **`ug dispatch`가 도메인 프로젝트 뒷단(예: MSO pipeline.py)에 위임할 때 쓰던 inner subprocess timeout을 30s → 8s로 낮췄다.** patch bump 사유: 계약·스키마 변경 없는 안정성 수정. 호출측(uug-context-hook.py 등 UserPromptSubmit 훅)이 `ug.py dispatch`를 outer timeout=10s로 감싸는 것을 전제로 하는데, inner가 30s였던 탓에 도메인 dispatch가 오래 걸리는 발화에서 훅이 outer가 강제 종료할 때까지 불필요하게 붙잡혀 매 프롬프트 지연(최대 관측치 30s)을 유발했다.
+
+### Fixed
+
+| 변경 | 내용 |
+|------|------|
+| dispatch inner timeout | `ug.py`의 `dispatch_to_project()` subprocess timeout을 `30 → 8`로 조정 — outer 훅 예산(10s) 안에서 항상 자체적으로 종료되도록 정렬. |
+
 ## v0.1.0 (2026-07-04) — candidate-bound grounding 1단계 (margin fallback + intent scope)
 
 > **grounding 판정에 top-2 margin 기반 ambiguous fallback 을 배선하고, intent taxonomy 에 후보 공간 위계(scope) 축을 도입했다.** minor bump 사유: grounding 결과 계약에 새 status(`ambiguous`)와 관측 필드가 추가되고, intent SoT 에 새 축(`uug:scope`)이 생겼다. 기본값은 전부 비회귀(기존 동작 동일) — 이번 릴리스는 측정·노출 레이어이며 후보 바인딩 정책은 2단계.
