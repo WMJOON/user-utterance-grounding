@@ -21,9 +21,28 @@ description: >
 ```bash
 python3 scripts/ug.py ground "<발화>"   # 발화 → 타깃 프로젝트 추론 (Lv10 keyword)
 python3 scripts/ug.py resolve <project> # project → 이 머신 절대경로
-python3 scripts/ug.py doctor            # 레지스트리 경로 존재 확인 (✓/✗/⚠)
+python3 scripts/ug.py doctor            # 레지스트리 경로 존재 확인 (✓/✗/−/⚠) + rdflib 점검
+python3 scripts/ug.py locate "<발화>"   # 지칭 프로젝트 디렉토리 (keyword-map 상 모호하면 clarify)
+python3 scripts/ug.py infer "<발화>" --transcript <jsonl> [--log]   # 키워드+연속성+유사발화 → emit 판정 JSON
 python3 scripts/ug.py list              # 등록 프로젝트
 ```
+
+## 전역 locate 훅 (Claude Code + Codex)
+
+스크립트 하나(`~/.claude/hooks/uug-context-hook.py`)를 두 클라이언트에 전역 등록한다. 매 발화에 `ug.py locate` 를 돌려
+explicit(프로젝트 id·`aliases`) 은 대상 디렉토리 안내, tacit(`keywords`) 은 추정(likely) 또는 모호 시 clarify 지시를 주입한다.
+
+| 클라이언트 | 등록 위치 | 출력 |
+|---|---|---|
+| Claude Code | `~/.claude/settings.json` → `hooks.UserPromptSubmit` | plain stdout |
+| Codex | `~/.codex/config.toml` → `[features] hooks = true` + `[[hooks.UserPromptSubmit]]` (`--codex`) | `hookSpecificOutput.additionalContext` JSON |
+
+- Codex 는 새 훅을 **신뢰(trust) 승인 전까지 조용히 건너뛴다.** 등록 후 대화형 `codex` 에서 `/hooks` 로 한 번 승인한다.
+- 세션 디렉토리: Claude 는 `CLAUDE_PROJECT_DIR`, Codex 는 payload `cwd`. 같은 프로젝트면 침묵.
+- 프로젝트별 copy-form 등록과 함께 쓰면 넛지가 중복되므로 전역만 쓴다.
+- 훅은 `ug.py infer` 를 매 프롬프트 호출(~0.2s): explicit → clear, tacit → likely/clarify, 키워드 없음 → 연속성(payload `transcript_path` 의 직전 턴 작업 경로) → 유사 발화(omlx 상주 bge-m3) 폴백.
+  넛지는 `emit=true` 일 때만 (키워드 없음이면 직전 작업과 유사 발화가 일치하거나, 직전 없이 유사 발화가 강할 때). 모든 판정은 `~/.local/share/uug/locate-log.jsonl` 에 원문 없이 기록.
+- 실측(eval_targets.py --gate, 345건): 넛지 57% 발화에서 발생, inferred 넛지 87%·clarify 후보 포함 94%·연속성 추천 94% 적중.
 
 ## 구성
 

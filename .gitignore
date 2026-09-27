@@ -1,6 +1,8 @@
 # 로컬 런타임 작업 데이터 — 커밋 금지 (스킬 실행 시 생성, 소스 아님)
 # uug-grounding 스킬의 스크래치/작업 디렉토리
 skills/uug-grounding/workspace/
+# 발화-타깃 태깅 산출물 (트랜스크립트 참조·세션 경로 포함)
+skills/uug-pattern-analytics/workspace/
 
 # MSO 대화 컨텍스트 런타임 저장소 (turns.jsonl 등 — 대화 내용·PII 포함 가능).
 # 어느 위치든 추적 금지.

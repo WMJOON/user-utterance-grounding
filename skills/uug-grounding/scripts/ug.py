@@ -19,6 +19,7 @@ import sys
 import json
 import datetime
 import argparse
+import socket
 from pathlib import Path
 
 import yaml
@@ -49,6 +50,18 @@ def _autodetect_vault():
     return None
 
 
+def current_host():
+    """machine.yaml hosts 섹션 키. UG_HOST 로 override (테스트 격리)."""
+    return os.environ.get("UG_HOST") or socket.gethostname().split(".")[0]
+
+
+def absent_anchors():
+    """이 머신 섹션에서 null 로 선언한 앵커명 (= 이 머신에는 없는 프로젝트 루트)."""
+    hosts = (_load_yaml(MACHINE, {}) or {}).get("hosts") or {}
+    mine = (hosts.get(current_host()) or {}).get("anchors") or {}
+    return {a for a, v in mine.items() if v is None}
+
+
 def load_anchors():
     """앵커(앵커명→절대경로) 해소. vault 앵커는 머신-무관하게 자가복구한다.
 
@@ -57,9 +70,13 @@ def load_anchors():
     살므로 .obsidian 마커로 런타임 도출이 항상 가능 → 저장값이 이 머신에 실재하지
     않으면 탐지값으로 덮어쓰고, 절대경로를 다시 persist 하지 않아 오염 고리를 끊는다.
     vault 밖 앵커(code/home 등)는 machine.yaml 저장값을 그대로 신뢰한다.
+    같은 이유로 vault 밖 앵커는 hosts.<hostname>.anchors 에 머신별로 두고,
+    공통 anchors 위에 이 머신 섹션을 덮어쓴다.
     """
-    m = _load_yaml(MACHINE, {})
-    anchors = dict((m or {}).get("anchors", {}))
+    m = _load_yaml(MACHINE, {}) or {}
+    anchors = dict(m.get("anchors") or {})
+    anchors.update(((m.get("hosts") or {}).get(current_host()) or {}).get("anchors") or {})
+    anchors = {k: v for k, v in anchors.items() if v is not None}
     stored = anchors.get("vault")
     if not stored or not Path(stored).is_dir():
         v = _autodetect_vault()
@@ -113,10 +130,19 @@ def cmd_resolve(args):
 
 def cmd_doctor(args):
     projects, anchors = load_projects(), load_anchors()
+    elsewhere = absent_anchors()
     ok = True
+    print(f"  (host = {current_host()}, python = {sys.executable})")
+    try:
+        import rdflib  # noqa: F401  ground/dispatch 런타임 의존성
+    except ImportError:
+        print("  ⚠ rdflib 없음 — ground/dispatch 불가: pip install -r requirements.txt")
+        ok = False
     for name in sorted(projects):
         path, err = resolve_one(name, projects, anchors)
-        if err and err.startswith("anchor-undefined"):
+        if err and projects[name].get("anchor") in elsewhere:
+            print(f"  − {name}: 이 머신에 없음 (hosts 섹션 null, anchor={projects[name]['anchor']})")
+        elif err and err.startswith("anchor-undefined"):
             print(f"  ⚠ {name}: {err} — machine.yaml 에 앵커 추가 필요")
             ok = False
         elif path and Path(path).exists():
@@ -127,13 +153,25 @@ def cmd_doctor(args):
     return 0 if ok else 1
 
 
+def _kw_in(kw, utt_lower):
+    """키워드 포함 여부. 영숫자 키워드는 더 긴 토큰의 일부면 불일치 ('UUG' ⊄ 'uug-locate').
+    한글 등 비ASCII 키워드는 조사가 붙으므로 부분 문자열로 본다."""
+    k = str(kw).lower()
+    if not k:
+        return False
+    if not k.isascii():
+        return k in utt_lower
+    import re
+    return re.search(r"(?<![A-Za-z0-9_-])" + re.escape(k) + r"(?![A-Za-z0-9_-])", utt_lower) is not None
+
+
 def _match_project(utterance, projects):
     """projects.yaml 키워드/이름으로 발화에서 프로젝트 후보 점수화 (target_project 슬롯 해석)."""
     utt = utterance.lower()
     scored = []
     for name, p in projects.items():
-        terms = [name] + list(p.get("keywords", [])) + list(p.get("tags", []))
-        hits = sorted({t for t in terms if str(t).lower() and str(t).lower() in utt})
+        terms = [name] + list(p.get("aliases", [])) + list(p.get("keywords", [])) + list(p.get("tags", []))
+        hits = sorted({t for t in terms if _kw_in(t, utt)})
         if hits:
             scored.append((len(hits), name, hits))
     scored.sort(key=lambda x: (-x[0], x[1]))
@@ -434,6 +472,297 @@ def cmd_list(args):
     return 0
 
 
+# uug-pattern-analytics 가 태깅 이력으로 학습한 '키워드 → 실제 작업 프로젝트' 분포
+KEYWORD_MAP = SKILL_DIR.parent / "uug-pattern-analytics" / "workspace" / "keyword-map.json"
+
+
+def _resolve_target(name, projects, anchors):
+    """등록 프로젝트 또는 '<umbrella>:<sub>'(미등록 서브모듈) → 절대경로."""
+    if ":" in name:
+        base, sub = name.split(":", 1)
+        root, err = resolve_one(base, projects, anchors)
+        return str(Path(root) / sub) if not err else None
+    path, err = resolve_one(name, projects, anchors)
+    return path if not err else None
+
+
+def _umbrella_subs(projects, anchors):
+    """.gitmodules 를 가진 등록 루트의 미등록 서브모듈 → {sub_basename: '<umbrella>:<sub>'}."""
+    import re
+    roots = {os.path.realpath(p) for n in projects
+             for p in [_resolve_target(n, projects, anchors)] if p}
+    out = {}
+    for name in projects:
+        root = _resolve_target(name, projects, anchors)
+        gm = Path(root) / ".gitmodules" if root else None
+        if gm and gm.exists():
+            for rel in re.findall(r"^\s*path\s*=\s*(.+?)\s*$", gm.read_text(encoding="utf-8"), re.M):
+                sub = os.path.realpath(os.path.join(root, rel))
+                own = os.path.realpath(root)
+                # 등록 루트와 같거나 그 안쪽(더 깊은 등록 프로젝트 소속)이면 분리하지 않는다
+                if not any(r != own and (sub == r or sub.startswith(r + os.sep)) for r in roots):
+                    out[os.path.basename(rel)] = f"{name}:{rel}"
+    return out
+
+
+def do_locate(utterance, use_similar=False):
+    """발화가 지칭하는 프로젝트 디렉토리 추론 (intent 무관, 부작용 없음).
+
+    키워드 두 종류 (projects.yaml):
+      explicit = 프로젝트 id + aliases — 직접 지칭. 학습 분포와 무관하게 확정.
+      tacit    = keywords (+ 미등록 서브모듈 이름은 explicit) — 주제 암시. keyword-map 학습 분포로 판정.
+    status:
+      clear    — explicit 이 한 프로젝트를 가리킴
+      likely   — tacit 만 있고 한쪽으로 모이거나(exclusive) 관측 부족(sparse) → 추정, 확인 후 진행
+      clarify  — explicit 끼리 충돌 / tacit 이 여러 프로젝트로 갈라짐(ambiguous) / tacit 추정끼리 충돌
+      none     — 지칭 키워드 없음
+    """
+    projects, anchors = load_projects(), load_anchors()
+    try:
+        kmap = json.loads(KEYWORD_MAP.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        kmap = {}
+    utt = utterance.lower()
+    owner, explicit = {}, set()
+    for name, p in projects.items():
+        for kw in [name] + list(p.get("aliases", [])):
+            owner.setdefault(str(kw), name)
+            explicit.add(str(kw))
+        for kw in p.get("keywords", []):
+            owner.setdefault(str(kw), name)
+    for base, label in _umbrella_subs(projects, anchors).items():
+        if base not in owner:
+            owner[base] = label
+            explicit.add(base)
+
+    hits = [kw for kw in owner if _kw_in(kw, utt)]
+    # 더 긴 키워드에 포함된 짧은 키워드는 제외 ("콘텐츠 허브" 안의 "콘텐츠")
+    hits = [k for k in hits if not any(k != o and k.lower() in o.lower() for o in hits)]
+    if not hits:
+        return {"status": "none", "keywords": [], "candidates": []}
+
+    sure, likely, unsure = {}, {}, {}
+    for kw in hits:
+        if kw in explicit:
+            sure.setdefault(owner[kw], kw)
+            continue
+        m = kmap.get(kw) or {}
+        if m.get("status") == "ambiguous":
+            for c in m["candidates"]:
+                unsure.setdefault(c["project"], (kw, c["share"]))
+            unsure.setdefault(owner[kw], (kw, 0.0))   # 등록 소유자는 관측이 적어도 후보에 포함
+        elif m.get("status") == "exclusive":
+            likely.setdefault(m["candidates"][0]["project"], kw)
+        else:   # sparse / 미학습 → 등록 소유자 추정
+            likely.setdefault(owner[kw], kw)
+
+    def cand(p, kw, share=None):
+        return {"project": p, "keyword": kw, "share": share,
+                "kind": "explicit" if kw in explicit else "tacit",
+                "path": _resolve_target(p, projects, anchors)}
+
+    if len(sure) == 1:
+        (p, kw), = sure.items()
+        return {"status": "clear", "keywords": hits, "candidates": [cand(p, kw)]}
+    if sure:   # explicit 끼리 충돌 (두 프로젝트를 모두 부름)
+        return {"status": "clarify", "keywords": hits,
+                "candidates": [cand(p, kw) for p, kw in sure.items()]}
+    if len(likely) == 1 and not unsure:
+        (p, kw), = likely.items()
+        return {"status": "likely", "keywords": hits, "candidates": [cand(p, kw)]}
+    for p, kw in likely.items():
+        unsure.setdefault(p, (kw, 0.0))
+    ranked = sorted(unsure.items(), key=lambda x: -x[1][1])
+    out = {"status": "clarify", "keywords": hits,
+           "candidates": [cand(p, kw, share) for p, (kw, share) in ranked]}
+    if use_similar:
+        _rank_by_similar(utterance, out)
+    return out
+
+
+SIMILAR_PY = SKILL_DIR.parent / "uug-pattern-analytics" / "scripts" / "similar.py"
+UUG_VENV_PY = Path(os.environ.get("UUG_VENV_PY", Path.home() / ".local/share/uug/venv/bin/python"))
+# 모호 키워드 발화 LOO 실측: 후보 내 유사 발화 비중 ≥0.6 이면 80% 적중 (무작위 39%).
+# 자동 확정이 아니라 clarify 질문의 추천 순서로만 쓴다.
+SIMILAR_RECOMMEND = 0.6
+SIMILAR_MIN_NEIGHBORS = 2
+
+
+def _similar(utterance, candidates=None):
+    """과거 유사 발화(zvec + omlx 상주 bge-m3, ~0.1s)의 타깃 순위. 실패 시 []."""
+    import subprocess
+    if not (UUG_VENV_PY.exists() and SIMILAR_PY.exists()):
+        return []
+    cmd = [str(UUG_VENV_PY), "-W", "ignore", str(SIMILAR_PY), "query", "--json"]
+    if candidates:
+        cmd += ["--candidates", ",".join(candidates)]
+    try:
+        r = subprocess.run(cmd + [utterance], capture_output=True, text=True, timeout=8)
+        return json.loads(r.stdout).get("ranking") or []
+    except Exception:
+        return []
+
+
+def _rank_by_similar(utterance, out):
+    """clarify 후보를 과거 유사 발화(zvec, bge-m3)의 타깃 비중으로 재정렬 + 추천 표시.
+    venv·색인이 없거나 실패하면 원래 순서 유지."""
+    rank = _similar(utterance, [c["project"] for c in out["candidates"]])
+    if not rank:
+        return
+    w = {x["project"]: (x["weight"], x["neighbors"]) for x in rank}
+    for c in out["candidates"]:
+        c["similar"], c["neighbors"] = w.get(c["project"], (0.0, 0))
+    top = max(out["candidates"], key=lambda c: c["similar"])
+    # 이웃 1건짜리 100% 는 근거가 아니다 — 최소 2건 이상 모였을 때만 추천하고 맨 앞으로.
+    # 추천이 성립하지 않으면 키워드 분포 순서를 유지한다.
+    if top["similar"] >= SIMILAR_RECOMMEND and top["neighbors"] >= SIMILAR_MIN_NEIGHBORS:
+        out["recommended"] = top["project"]
+        out["candidates"].sort(key=lambda c: c is not top)
+
+
+def _tag_targets():
+    import importlib.util
+    p = SKILL_DIR.parent / "uug-pattern-analytics" / "scripts" / "tag_targets.py"
+    spec = importlib.util.spec_from_file_location("tag_targets", p)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def prev_target(transcript, utterance="", lookback=5):
+    """연속성 신호: 대화 기록(transcript_path)에서 직전 턴들의 타깃.
+    도구가 건드린 경로(work) 우선, 없으면 그 턴 발화의 explicit 지칭. 현재 발화 턴은 제외."""
+    if not transcript or not Path(transcript).exists():
+        return None
+    try:
+        tt = _tag_targets()
+        me = sys.modules[__name__]
+        roots = tt.project_roots(me)
+        subs = tt.submodule_dirs(roots)
+        parse = tt._codex_turns if "/.codex/" in str(transcript) else tt._claude_turns
+        turns = list(parse(Path(transcript)))
+    except Exception:
+        return None
+    if turns and turns[-1]["text"].strip() == utterance.strip():
+        turns = turns[:-1]
+    for turn in reversed(turns[-lookback:]):
+        w, _, _ = tt.work_signal(turn, roots, subs)
+        if w:
+            return w
+        loc = do_locate(turn["text"])
+        if loc["status"] == "clear":
+            return loc["candidates"][0]["project"]
+    return None
+
+
+# eval_targets.py LOO 실측(정답 355건): 직전 타깃 79%(커버 90%), 직전→유사발화 폴백 78%(커버 ~100%),
+# 유사발화 단독 51%, 리랭커 50%. → 연속성 우선, 유사 발화는 폴백·보강.
+def do_infer(utterance, transcript=None):
+    """매 프롬프트 추론: explicit/tacit 키워드(do_locate) + 연속성(prev) + 유사 발화(knn).
+
+    emit=True 일 때만 훅이 넛지한다 (신뢰도 높음). 그 외는 기록용.
+      clear              explicit 지칭 → 항상 emit
+      clarify            tacit 모호/충돌 → emit, 후보에 연속성(우선)·유사 발화로 추천 표시
+      likely             tacit 단일 → emit (연속성과 어긋나면 clarify 로 격상)
+      inferred           키워드 없음 → prev 와 knn 이 일치하거나, prev 없이 knn 이 강할 때만 emit
+    """
+    projects, anchors = load_projects(), load_anchors()
+    loc = do_locate(utterance)
+    prev = prev_target(transcript, utterance)
+    out = dict(loc, prev=prev)
+
+    if loc["status"] == "clear":
+        out["emit"] = True
+        return out
+
+    def cand(p, why):
+        return {"project": p, "keyword": why, "share": None, "kind": "context",
+                "path": _resolve_target(p, projects, anchors)}
+
+    if loc["status"] == "likely":
+        p = loc["candidates"][0]["project"]
+        if prev and prev != p:   # 주제 암시와 직전 작업이 어긋남 → 되묻기
+            out.update(status="clarify", recommended=prev, recommended_by="연속성",
+                       candidates=[cand(prev, "직전 작업")] + loc["candidates"])
+        out["emit"] = True
+        return out
+
+    if loc["status"] == "clarify":
+        names = [c["project"] for c in loc["candidates"]]
+        if prev and prev in names:   # 모호 키워드 발화에서 직전 타깃 적중률 92%
+            out["recommended"], out["recommended_by"] = prev, "연속성"
+            out["candidates"] = sorted(loc["candidates"], key=lambda c: c["project"] != prev)
+        else:
+            _rank_by_similar(utterance, out)
+            if out.get("recommended"):
+                out["recommended_by"] = "유사 발화"
+        out["emit"] = True
+        return out
+
+    # status none — 키워드 없음: 연속성 → 유사 발화 폴백
+    rank = _similar(utterance)
+    top = rank[0] if rank else None
+    knn = top["project"] if top else None
+    strong_knn = bool(top and top["weight"] >= SIMILAR_RECOMMEND
+                      and top["neighbors"] >= SIMILAR_MIN_NEIGHBORS)
+    target = prev or knn
+    out.update(knn=knn, knn_weight=top["weight"] if top else None)
+    if not target:
+        out["emit"] = False
+        return out
+    why = ("직전 작업+유사 발화" if prev and prev == knn else "직전 작업" if prev else "유사 발화")
+    out.update(status="inferred", candidates=[cand(target, why)],
+               emit=bool((prev and prev == knn) or (not prev and strong_knn)))
+    return out
+
+
+LOCATE_LOG = Path(os.environ.get("UUG_LOCATE_LOG", Path.home() / ".local/share/uug/locate-log.jsonl"))
+
+
+def log_infer(r, transcript, session_dir):
+    """넛지 여부와 무관하게 판정을 남긴다 (원문 없음 — transcript 참조만). 분석·임계 튜닝용."""
+    try:
+        LOCATE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        c = (r.get("candidates") or [{}])[0]
+        rec = {"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+               "transcript": transcript, "session_dir": session_dir,
+               "status": r["status"], "emit": r.get("emit"), "target": c.get("project"),
+               "why": c.get("keyword"), "prev": r.get("prev"), "knn": r.get("knn"),
+               "knn_weight": r.get("knn_weight"), "recommended": r.get("recommended"),
+               "keywords": r.get("keywords")}
+        with LOCATE_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def cmd_infer(args):
+    r = do_infer(args.utterance, args.transcript)
+    if args.log:
+        log_infer(r, args.transcript, args.session_dir)
+    print(json.dumps(r, ensure_ascii=False))
+    return 0
+
+
+def cmd_locate(args):
+    r = do_locate(args.utterance, use_similar=args.similar)
+    if args.json:
+        print(json.dumps(r, ensure_ascii=False))
+        return 0
+    if r["status"] == "none":
+        print("[locate] 지칭 키워드 없음")
+        return 0
+    head = {"clear": "확정 (explicit)", "likely": f"추정 (tacit: {', '.join(r['keywords'])}) — 확인 후 진행"}.get(
+        r["status"], f"모호 — 확인 필요 ({', '.join(r['keywords'])})")
+    print(f"[locate] {head}")
+    for c in r["candidates"]:
+        share = f" 키워드 {c['share']:.0%}" if c.get("share") else ""
+        sim = f" 유사발화 {c['similar']:.0%}(n={c['neighbors']})" if "similar" in c else ""
+        star = " ★추천" if r.get("recommended") == c["project"] else ""
+        print(f"  - {c['project']}{share}{sim}{star}  {c['path'] or '(경로 미해소)'}")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(prog="ug", description="user-utterance-grounding")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -446,6 +775,14 @@ def main():
     s = sub.add_parser("dispatch"); s.add_argument("utterance")
     s.add_argument("--json", action="store_true", help="GroundedCommand 를 JSON 한 줄로 출력")
     s.set_defaults(func=cmd_dispatch)
+    s = sub.add_parser("locate", help="발화가 지칭하는 프로젝트 디렉토리 (모호하면 clarify)")
+    s.add_argument("utterance"); s.add_argument("--json", action="store_true")
+    s.add_argument("--similar", action="store_true", help="clarify 후보를 유사 발화(zvec)로 재정렬 (~4s)")
+    s.set_defaults(func=cmd_locate)
+    s = sub.add_parser("infer", help="매 프롬프트 추론: 키워드 + 연속성(transcript) + 유사 발화 → JSON")
+    s.add_argument("utterance"); s.add_argument("--transcript")
+    s.add_argument("--session-dir"); s.add_argument("--log", action="store_true")
+    s.set_defaults(func=cmd_infer)
     s = sub.add_parser("use"); s.add_argument("project"); s.set_defaults(func=cmd_use)
     s = sub.add_parser("list"); s.set_defaults(func=cmd_list)
     args = ap.parse_args()
