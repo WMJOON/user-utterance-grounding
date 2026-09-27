@@ -4,7 +4,10 @@
 # 각 항목:
 #   anchor   : machine.yaml 의 앵커명 (vault/code/home 등). 위치의 머신-무관 기준점.
 #   rel      : 앵커 상대경로.
-#   keywords : target_project 추론용 자연어 트리거 (발화에 이 단어 등장 시 이 프로젝트로 grounding).
+#   aliases  : (v0.3.0) explicit — 프로젝트를 직접 부르는 이름·별칭. `ug locate/infer` 에서 항상 확정.
+#   keywords : tacit — 주제로 프로젝트를 암시하는 말. `ug locate/infer` 에서는 발화 태깅 학습 분포
+#              (uug-pattern-analytics keyword_map.py)로 판정: 한쪽으로 모이면 추정, 갈라지면 clarify.
+#              (ground/dispatch 의 target_project 추론은 aliases + keywords 를 함께 쓴다.)
 #   tags     : 분류용(선택).
 #   intent_registry : (선택) 그 프로젝트의 *도메인* intent TTL (프로젝트 루트 anchor+rel 상대경로).
 #                     선언 시 grounding 이 user intent + 그 도메인 intent 를 합쳐 ground 한다
@@ -16,13 +19,15 @@
 my-main-repo:
   anchor: vault
   rel: path/to/main-repo
-  keywords: ["메인", "main repo", "별칭"]
+  aliases: ["main repo", "메인 레포"]         # explicit
+  keywords: ["메인", "배포"]                  # tacit
   tags: [example]
 
 my-knowledge-base:
   anchor: vault
   rel: path/to/kb
-  keywords: ["KB", "지식베이스", "노트"]
+  aliases: ["KB", "지식베이스"]
+  keywords: ["노트", "리서치"]
   tags: [example, knowledge-base]
 
 # 도메인 레지스트리 브리지 예시 — 이 프로젝트의 운영 intent(예: MSO dispatch_ticket)를
@@ -31,7 +36,8 @@ my-knowledge-base:
 my-orchestrator:
   anchor: vault
   rel: path/to/orchestrator
-  keywords: ["오케스트레이터", "티켓", "dispatch"]
+  aliases: ["오케스트레이터"]
+  keywords: ["티켓", "dispatch"]
   tags: [example, orchestrator]
   intent_registry: repository/skills/intent-registry/instances/intents.ttl
   dispatch:                                   # (선택) 도메인 intent 뒷단 위임 진입점

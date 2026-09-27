@@ -1,5 +1,47 @@
 # 변경 이력
 
+## v0.3.0 (2026-09-27) — 발화별 타깃 태깅 + `locate`/`infer` (explicit·tacit, 연속성, 유사 발화)
+
+> **발화마다 "어느 프로젝트를 지칭했는가"를 태깅하고, 그 이력으로 매 프롬프트 지칭 대상을 추론하는 경로를 추가했다.** minor bump 사유: 새 CLI 계약 표면(`locate`, `infer`), 레지스트리 새 필드(`aliases`), 새 훅, pattern-analytics 신규 스크립트 4종. 기존 `ground`/`dispatch`/`resolve` 동작은 그대로다(하위호환).
+
+### Added
+
+| 변경 | 내용 |
+|------|------|
+| `aliases` (explicit) / `keywords` (tacit) | `projects.yaml` 키워드를 두 종류로 구분. explicit(프로젝트 id·별칭)은 항상 확정, tacit(주제 암시)은 학습 분포로 판정. |
+| `ug locate "<발화>"` | 지칭 프로젝트 디렉토리 추론. `clear`(explicit) / `likely`(tacit 단일) / `clarify`(tacit 모호·충돌) / `none`. `--similar` 로 clarify 후보에 유사 발화 기준 추천. |
+| `ug infer "<발화>" --transcript <jsonl>` | 키워드 + **연속성**(transcript 직전 턴에서 도구가 건드린 경로) + **유사 발화** 폴백 → `emit` 판정 JSON. `--log` 로 판정을 원문 없이 `~/.local/share/uug/locate-log.jsonl` 에 기록. |
+| `hooks/ug-locate-hook.py` | `infer` 를 매 프롬프트 호출(~0.2s)해 신뢰도가 높을 때만 1줄 주입. Claude Code(plain stdout) / Codex(`--codex`, `additionalContext` JSON) 공용. 현재 세션 디렉토리와 같은 대상이면 침묵. |
+| `machine.yaml hosts.<hostname>.anchors` | 머신별 앵커 오버레이. 동기화되는 `machine.yaml` 에 여러 머신 경로가 섞여도 hostname 섹션이 공통 `anchors` 위에 덮어쓴다. `null` = 이 머신에 없는 루트(doctor `−`). |
+| `ug doctor` | 실행 python 경로와 `rdflib` 설치 여부를 점검. |
+| pattern-analytics `tag_targets.py` | Claude Code·Codex 트랜스크립트의 발화마다 `utterance_target`(발화 키워드) / `work_target`(그 턴의 도구 경로 역해석) / `disagree` 를 태깅. **원문은 저장하지 않고** ref(file+id)만. 엄브렐러의 미등록 서브모듈은 `<umbrella>:<sub>` 로 분리. |
+| pattern-analytics `keyword_map.py` | 키워드 → 실제 작업 프로젝트 분포 학습(`explicit`/`exclusive`/`ambiguous`/`sparse` + `drift`). `locate` 가 소비. |
+| pattern-analytics `similar.py` | 타깃 확정 발화를 zvec 에 색인(벡터 + target/ref, 원문 없음). 임베딩 `BAAI/bge-m3` — OpenAI 호환 로컬 임베딩 서버(`UUG_EMBED_URL`) 우선, 실패 시 sentence-transformers 로컬 로드. |
+| pattern-analytics `eval_targets.py` | 추론 방식 leave-one-out 비교 + `--gate` 로 `infer` 넛지 규칙 재현. |
+
+### Fixed
+
+| 변경 | 내용 |
+|------|------|
+| 영문 키워드 경계 | 영숫자 키워드는 더 긴 토큰의 일부면 불일치(`UUG` ⊄ `uug-locate`). 뒤에 한글 조사가 붙는 경우는 일치. |
+| 중첩 서브모듈 귀속 | 등록 프로젝트 안쪽의 서브모듈을 별도 프로젝트로 떼어내지 않는다. |
+
+### 실측 (작성자 환경, 작업 경로로 정답이 확인된 발화 345건, leave-one-out)
+
+| 방식 | 정확도 |
+|------|--------|
+| 최빈값 기준선 | 32% |
+| 유사 발화 kNN (bge-m3) | 49% |
+| cross-encoder 리랭커 (bge-reranker-v2-m3) | 50% — 이득 없음, 채택 안 함 |
+| 연속성 (직전 턴 타깃) | 78% (커버 90%) |
+| 연속성 → kNN 폴백 | 77% (커버 ~100%) |
+
+`infer` 넛지 규칙 재현: 키워드 없이 추론해 넛지한 경우 87%, clarify 후보에 정답 포함 94%, 연속성 추천 94% 적중. 짧은 한국어 요청문("~해줘")끼리 내용과 무관하게 0.98 로 뭉치는 `paraphrase-multilingual-MiniLM` 대신 `bge-m3` 를 쓴다.
+
+### Known issues
+
+- `tests/test_bridge.py` 2건 실패(29 통과) — 이번 변경과 무관. 도메인 레지스트리(MSO `intents.ttl`) 트리거가 좁아져 브리지 fixture(예: "wf-abc 중단해")가 미매칭된다. 트리거와 fixture 중 어느 쪽을 맞출지는 도메인 레지스트리 쪽 결정이 필요하다.
+
 ## v0.2.0 (2026-07-22) — `ground --json` 추가 (dispatch 미경유 값전달)
 
 > **`ug.py ground`에 `--json` 출력 모드를 추가했다.** minor bump 사유: 새 CLI 계약 표면(플래그) 추가(하위호환, 비파괴) — 기존 `ground`/`--for-hook` 동작은 그대로다. `intent_id`/`target_project`/`target_path`만 필요한 소비자(예: 프로젝트별 uug-context-hook)가 `dispatch`(도메인 프로젝트 뒷단 위임, nested subprocess)를 거치지 않고 `_do_ground()` 결과를 그대로 받을 수 있다.

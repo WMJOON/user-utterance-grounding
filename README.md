@@ -1,4 +1,4 @@
-# user-utterance-grounding (UUG) v0.2.0
+# user-utterance-grounding (UUG) v0.3.0
 
 UUG는 **사용자 발화·의도 중심의 크로스-프로젝트 grounding 도구**다 — [MSO](https://github.com/WMJOON/multi-swarm-orchestrator)의 user-side 대응.
 
@@ -13,14 +13,16 @@ MSO가 **repository 단위의 작업 컨텍스트**(구조·워크플로·작업
 1. **타깃 모호**: "이거 정리하자"·"착수해줘" — 어느 프로젝트에 대한 요청인지 명시되지 않으면, 에이전트가 매번 되묻거나 잘못 짚는다.
 2. **위치 표류**: 같은 프로젝트가 머신마다 다른 절대경로에 있다. 사용자·에이전트가 경로를 기억하거나 다시 입력해야 한다.
 3. **기억·hand-off 부재**: 선호·결정·반복 패턴이 세션이 끝나면 사라진다. 다음 세션으로의 인계가 전적으로 사용자의 재설명에 의존한다.
+4. **지칭 오탐**: "온톨로지 작업하자"의 '온톨로지'처럼 여러 프로젝트에 걸친 말을 에이전트가 한 곳으로 단정하거나, 엉뚱한 디렉토리에서 연 세션에서 대상을 못 찾는다.
 
-UUG는 이 셋에 각각 대응한다.
+UUG는 이 넷에 각각 대응한다.
 
 | 문제 | UUG의 답 | 핵심 |
 |------|----------|------|
 | 타깃 모호 | 발화 → intent → 타깃 프로젝트 **grounding** | `uug-grounding` |
 | 위치 표류 | 머신-무관 레지스트리 + 런타임 **자가복구** | `projects.yaml` 앵커 + `machine.yaml` + `.obsidian` 탐지 |
 | 기억·hand-off 부재 | user-scope **영속 기억** + 패턴 분석 | `uug-user-memory` · `uug-pattern-analytics` |
+| 지칭 오탐 | 발화별 타깃 **태깅 이력**으로 explicit/tacit 판정 + 연속성 추론, 모호하면 **clarify** | `ug locate` · `ug infer` · `ug-locate-hook.py` |
 
 ```mermaid
 flowchart TD
@@ -59,7 +61,7 @@ flowchart TD
 
 ---
 
-## 네 가지 핵심
+## 다섯 가지 핵심
 
 ### 1. Utterance → Intent Grounding (namespace-agnostic 멀티-레지스트리)
 
@@ -76,6 +78,7 @@ flowchart TD
 프로젝트 위치를 **명명된 앵커 + 머신 설정**으로 관리한다. `projects.yaml`(앵커명 + 상대경로, 싱크됨)과 `machine.yaml`(앵커→절대경로, gitignore)을 분리해, 같은 레지스트리가 어느 머신에서나 동작한다.
 
 - `vault` 앵커는 `machine.yaml`에 적지 않아도 된다 — `.obsidian` 마커를 위로 탐지해 **런타임 자가복구**. iCloud 동기로 `machine.yaml`이 머신 간 복제돼도 절대경로가 오염되지 않는다.
+- `machine.yaml`이 동기화돼 여러 머신의 경로가 섞이면 `hosts.<hostname>.anchors` 섹션이 공통 `anchors` 위에 덮어쓴다. `null`로 둔 앵커는 "이 머신에 없음"으로 표시된다. (v0.3.0)
 - `ug resolve <project>` 로 현재 머신 절대경로 해석, `ug doctor` 로 멀티머신 경로 표류 점검.
 
 ### 3. §11 dispatch — UUG(앞단) → 프로젝트(뒷단)
@@ -96,6 +99,28 @@ ug dispatch "ticket-217 재실행"
 - **uug-user-memory**: user-context/user-pattern/user-preference(UC/UP/UF)를 jsonl + 시맨틱 인덱스 + 그래프로 자산화한다. MSO work-memory의 schema-driven 엔진을 user 스코프로 재사용하지만 타입은 UC/UP/UF로 제한한다. project-scope worklog는 각 프로젝트가 소유한다. "전에 이거 어떻게 하기로 했지?" 시맨틱 검색.
 - **uug-pattern-analytics**: 발화→intent 빈도·반복(워크플로 패턴/마찰)을 측정해 user-pattern 후보를 낸다 → uug-user-memory로 기록, grounding 트리거 정련 신호로 환류. 크로스-프로젝트 user 발화 스트림 대상.
 
+### 5. Locate / Infer — 발화별 타깃 태깅과 지칭 추론 (v0.3.0)
+
+**오탐을 막는 장치**이자 **엉뚱한 세션에서 대상 디렉토리를 찾아 주는 장치**다. 과거 발화마다 "실제로 어느 프로젝트에서 작업했는가"를 태깅해 두고, 그 이력으로 새 발화의 지칭 대상을 판정한다.
+
+```
+트랜스크립트(Claude Code·Codex)
+  → tag_targets.py   발화마다 utterance_target(키워드) / work_target(그 턴의 도구 경로) — 원문 미저장
+  → keyword_map.py   키워드 → 실제 작업 프로젝트 분포 (explicit / exclusive / ambiguous / sparse)
+  → similar.py       타깃 확정 발화를 zvec 에 색인 (bge-m3)
+  → ug infer         매 프롬프트: 키워드 + 연속성 + 유사 발화 → emit 판정
+```
+
+| 발화 | 판정 | 넛지 |
+|------|------|------|
+| explicit(프로젝트 id·`aliases`) | `clear` — 대상 디렉토리 | 항상 |
+| tacit(`keywords`), 한쪽으로 모임 | `likely` — 추정 + 확인 요청 | 항상 |
+| tacit, 여러 프로젝트로 갈라짐 | `clarify` — 추측 금지, 연속성·유사 발화 기준 추천 표시 | 항상 |
+| 키워드 없음 | `inferred` — 직전 턴 타깃 → 유사 발화 폴백 | 둘이 일치할 때만 |
+
+- **연속성이 주 신호다.** 작성자 환경 실측(345건): 직전 턴 타깃 78%, 유사 발화 kNN 49%, cross-encoder 리랭커 50%(채택 안 함). 자세한 수치는 [changelog](docs/changelog.md).
+- 현재 세션 디렉토리와 같은 대상이면 침묵한다. 모든 판정은 넛지 여부와 무관하게 `~/.local/share/uug/locate-log.jsonl` 에 **원문 없이** 남아 임계 튜닝 재료가 된다.
+
 ---
 
 ## 스킬팩 구성 (orchestration 패턴 — MSO/MSM 류)
@@ -103,9 +128,9 @@ ug dispatch "ticket-217 재실행"
 | 스킬 | 역할 | 핵심 스크립트 | 상태 |
 |------|------|-----------|------|
 | `uug-orchestration` | 라우터/진입점 + 정책 | — | ✅ |
-| `uug-grounding` | 발화→{target_project, intent, slots} · intent TTL lookup · 위치 레지스트리(resolve/doctor) · `ug dispatch` · UserPromptSubmit 값전달 | `scripts/ug.py`, `src/lookup.py` | ✅ |
+| `uug-grounding` | 발화→{target_project, intent, slots} · intent TTL lookup · 위치 레지스트리(resolve/doctor) · `ug dispatch` · `ug locate`/`ug infer` · UserPromptSubmit 값전달 | `scripts/ug.py`, `src/lookup.py`, `hooks/ug-locate-hook.py` | ✅ |
 | `uug-user-memory` | UC/UP/UF 영속 (vendored schema-driven wm 엔진 + bootstrap) | `bootstrap.py`, vendored `wm_node.py` | ✅ |
-| `uug-pattern-analytics` | 발화→intent 빈도·반복 탐지 → user-pattern 후보 | — | ✅ MVP |
+| `uug-pattern-analytics` | 발화→intent 빈도·반복 탐지 → user-pattern 후보 · 발화별 타깃 태깅 · keyword-map 학습 · 유사 발화 색인 · 추론 방식 평가 | `analyze.py`, `tag_targets.py`, `keyword_map.py`, `similar.py`, `eval_targets.py` | ✅ |
 
 ---
 
@@ -126,6 +151,42 @@ ug doctor                        # 멀티머신 경로 표류 점검 (✓ found 
 ug ground "이거 정리하자"          # 발화 → {target_project, intent, slots}
 ug dispatch "ticket-217 재실행"   # 도메인 intent → 프로젝트 뒷단 CLI 위임
 ug use <project>                 # 현재 작업 프로젝트 고정 (선택)
+ug locate "온톨로지에서 찾아줘"     # 지칭 대상 (clear / likely / clarify / none)
+ug infer "좋아 이어서 하자" --transcript <session.jsonl>   # + 연속성·유사 발화 → emit 판정 JSON
+```
+
+**locate/infer 학습 파이프라인** (선택 — 없으면 `projects.yaml` 등록 소유자만으로 판정):
+
+```bash
+cd skills/uug-pattern-analytics
+python3 scripts/tag_targets.py            # 발화별 타깃 태깅 (증분)
+python3 scripts/keyword_map.py            # 키워드 → 작업 프로젝트 분포
+
+# 유사 발화 (zvec 은 Python ≥3.10 — 동기화 폴더 밖 venv 권장)
+python3.11 -m venv ~/.local/share/uug/venv
+~/.local/share/uug/venv/bin/pip install zvec sentence-transformers numpy pyyaml rdflib
+~/.local/share/uug/venv/bin/python scripts/similar.py index
+~/.local/share/uug/venv/bin/python scripts/eval_targets.py --gate   # 넛지 규칙 실측
+```
+
+**locate 훅 등록** — Claude Code `~/.claude/settings.json`:
+
+```json
+{"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "timeout": 10,
+  "command": "python3 \"$HOME/.claude/skills/uug-grounding/hooks/ug-locate-hook.py\""}]}]}}
+```
+
+Codex `~/.codex/config.toml` (등록 후 대화형 `codex` 에서 `/hooks` 로 신뢰 승인):
+
+```toml
+[features]
+hooks = true
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = 'python3 "$HOME/.codex/skills/uug-grounding/hooks/ug-locate-hook.py" --codex'
+timeout = 10
 ```
 
 ---
@@ -140,9 +201,9 @@ ug use <project>                 # 현재 작업 프로젝트 고정 (선택)
 
 **Machine-portable.** 절대경로 하드코딩 없음 — `__file__`/`.obsidian` 자동탐지/env/anchor. iCloud 동기·멀티머신 안전.
 
-**Privacy-first.** 도구는 공개하되 **사용자 데이터는 사적**으로 — `projects.yaml`·`machine.yaml`·`.session.json`은 gitignore, 배포는 `*.example.yaml`만. push 전 `check-private.sh` PII 게이트(절대경로·이메일·vault 시그니처·추적된 사용자 데이터 차단).
+**Privacy-first.** 도구는 공개하되 **사용자 데이터는 사적**으로 — `projects.yaml`·`machine.yaml`·`.session.json`·태깅 산출물(`workspace/`)은 gitignore, 배포는 `*.example.yaml`만. 발화 태깅·유사 발화 색인·locate 로그는 **원문을 저장하지 않고** 트랜스크립트 참조와 벡터만 남긴다. push 전 `check-private.sh` PII 게이트(절대경로·이메일·vault 시그니처·추적된 사용자 데이터 차단).
 
-**HITL.** grounding이 모호하거나 필수 슬롯이 미충족이면 사용자에게 확인한다.
+**HITL.** grounding이 모호하거나 필수 슬롯이 미충족이면 사용자에게 확인한다. 지칭 추론도 마찬가지 — 유사 발화는 **자동 확정에 쓰지 않고** clarify 질문의 추천 순서에만 쓴다.
 
 ---
 
@@ -152,16 +213,24 @@ ug use <project>                 # 현재 작업 프로젝트 고정 (선택)
 Python 3.10+
 rdflib >= 7.0     # intent 레지스트리 TTL lookup
 PyYAML >= 6.0
+
+# 선택 — 유사 발화 (uug-pattern-analytics similar.py / eval_targets.py)
+zvec                   # 로컬 벡터 색인 (Python ≥3.10)
+sentence-transformers  # BAAI/bge-m3 로컬 로드 (폴백)
+numpy
+# 권장: OpenAI 호환 로컬 임베딩 서버에 bge-m3 상주 → UUG_EMBED_URL (기본 http://localhost:1234/v1/embeddings)
 ```
 
 ---
 
-## 로드맵 (v0.1.0 이후)
+## 로드맵
 
 - **candidate-bound grounding 2단계**: scope 기반 후보 바인딩 + 세션 컨텍스트 스택({repository, workflow_id, rail_id} + expiry, MSO 발행 소비) + `meta.dialog_feedback` intent(referent 는 활성 컨텍스트가 해소) + topic change/excursion 전이 정책. v0.1.0 은 측정 축(margin·scope)만 노출.
 - **Lv30 LLM fallback**: keyword-miss(~20%) 발화의 LLM 복구 경로 (현재 Lv10 키워드 grounding만).
 - **횡단 패턴 → 엄브렐러 제안**: `uug-pattern-analytics`가 사용자가 N개 프로젝트를 반복 횡단하는 패턴을 관측해 "엄브렐러/모노로 합쳐 가로지르는 워크플로우 생성"을 **제안**(실행은 프로젝트가). 미구현.
 - **user-memory 데이터 레이어**: UC/UP/UF 영속 저장소 위치·이름 확정.
+- **locate 학습 자동 갱신**: `tag_targets` → `keyword_map` → `similar index` 주기 실행과 locate-log 기반 임계 튜닝.
+- **intent 동사 트리거 확장**: 현재 intent 매칭률이 낮다("고쳐줘/만들자" 미매칭). 태깅 이력의 `disagree`·미매칭 발화를 트리거 정련 근거로 사용.
 
 ---
 
