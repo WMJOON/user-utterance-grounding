@@ -1,4 +1,4 @@
-# user-utterance-grounding (UUG) v0.3.0
+# user-utterance-grounding (UUG) v0.3.1
 
 UUG는 **사용자 발화·의도 중심의 크로스-프로젝트 grounding 도구**다 — [MSO](https://github.com/WMJOON/multi-swarm-orchestrator)의 user-side 대응.
 
@@ -32,9 +32,19 @@ flowchart TD
 
     C -- "UserPromptSubmit hook" --> H{"UUG_HOOKS_DISABLED=1?"}
     H -- "yes" --> Z
-    H -- "no" --> G["uug-grounding<br/>값전달 context 주입"]
+    H -- "no · 기본" --> LH["ug-locate-hook<br/>ug infer"]
+    H -- "no · --prompt-hook (legacy)" --> G["uug-grounding<br/>값전달 context 주입"]
+
+    LH --> KW{"발화 키워드"}
+    KW -- "explicit (id·aliases)" --> CL["clear<br/>대상 디렉토리 안내"]
+    KW -- "tacit, 한쪽으로 모임" --> LK["likely<br/>추정 + 확인 요청"]
+    KW -- "tacit, 갈라짐" --> CF["clarify<br/>추측 금지, 연속성 기준 추천"]
+    KW -- "없음" --> CT["직전 턴 작업 경로(연속성)<br/>→ 유사 발화 폴백"]
+    CT -- "둘이 일치할 때만" --> IN["inferred 힌트"]
+    CT -- "불일치" --> SL["침묵 + locate-log 기록"]
 
     C -- "CLI: ug ground / ug dispatch" --> G
+    C -- "CLI: ug locate / ug infer" --> LH
 
     G --> R["projects.yaml + machine.yaml<br/>프로젝트/앵커 해석"]
     G --> I["intent TTL registry<br/>user intents + project domain intents"]
@@ -48,6 +58,8 @@ flowchart TD
 
     U --> MEM["uug-user-memory<br/>UC / UP / UF JSONL"]
     M --> ANA["uug-pattern-analytics<br/>반복 발화·패턴 후보"]
+    TT["트랜스크립트"] --> TAG["tag_targets · keyword_map · similar<br/>발화별 타깃 태깅 → 키워드 분포·유사 발화 색인"]
+    TAG -. "학습 산출물" .-> LH
     ANA --> MEM
     MEM --> TR["task_rail_projection.py<br/>graph/task-rail-preferences.jsonl"]
     TR --> PR["entity-filling proposal<br/>decision drift / bias correction signal"]
@@ -138,38 +150,52 @@ ug dispatch "ticket-217 재실행"
 
 ```bash
 cd skills/uug-grounding
-pip install rdflib pyyaml
-cp projects.example.yaml projects.yaml   # 본인 프로젝트 등록 (machine.yaml 은 vault 자동탐지로 생략 가능)
-bash install.sh                          # ~/.claude/skills 심링크 + UserPromptSubmit 훅 등록
-bash install.sh --codex                  # ~/.codex/skills 심링크 + Codex UserPromptSubmit 훅 등록
-bash install.sh --all                    # Claude Code + Codex 등록 (양쪽 UserPromptSubmit 훅)
+pip install rdflib pyyaml                # 훅을 실행하는 python3 (3.9+) 에 설치
+cp projects.example.yaml projects.yaml   # 본인 프로젝트 등록: aliases(explicit) / keywords(tacit)
+bash install.sh                          # ~/.claude/skills 심링크 + UserPromptSubmit 훅(ug-locate-hook) 등록
+bash install.sh --codex                  # ~/.codex/skills 심링크 + Codex 훅 등록 → 대화형 codex 에서 /hooks 로 신뢰 승인
+bash install.sh --all                    # Claude Code + Codex
 ```
+
+`machine.yaml`은 `.obsidian` 자동탐지로 생략할 수 있다. 설치 스크립트는 여러 번 실행해도 결과가 같고, 이전 버전이 등록한 UUG 훅이 있으면 교체해 **하나만** 남긴다.
+
+**어떤 훅이 등록되나** (v0.3.1~ 기본값 변경):
+
+| 훅 | 판단 근거 | 대상을 모를 때 | 설치 |
+|----|-----------|----------------|------|
+| `hooks/ug-locate-hook.py` (기본) | explicit/tacit 키워드 + 직전 턴 작업 경로 + 유사 발화 | 확신할 때만 주입, 모호하면 clarify 지시 | `bash install.sh` |
+| `hooks/ug-prompt-hook.py` (legacy) | intent 매칭 + 키워드, 없으면 `last_project` | 마지막 사용 프로젝트로 채움 | `bash install.sh --prompt-hook` |
+
+legacy 훅은 대상을 말하지 않은 발화를 마지막 사용 프로젝트로 채우기 때문에, 여러 프로젝트를 오가면 엉뚱한 곳을 짚기 쉽다. 두 훅을 함께 등록하면 주입이 겹치므로 하나만 쓴다.
+
+CLI (아래 `ug`는 `python3 skills/uug-grounding/scripts/ug.py`의 줄임. 필요하면 `alias ug=...`):
 
 ```bash
 ug resolve <project>             # 프로젝트 식별자 → 이 머신 절대경로
-ug doctor                        # 멀티머신 경로 표류 점검 (✓ found / ✗ missing / ⚠ anchor)
+ug doctor                        # 경로 표류·의존성 점검 (✓ found / ✗ missing / − 이 머신에 없음 / ⚠ anchor)
+ug list                          # 등록 프로젝트
 ug ground "이거 정리하자"          # 발화 → {target_project, intent, slots}
 ug dispatch "ticket-217 재실행"   # 도메인 intent → 프로젝트 뒷단 CLI 위임
-ug use <project>                 # 현재 작업 프로젝트 고정 (선택)
+ug use <project>                 # 현재 작업 프로젝트 고정 (legacy 훅·ground 용)
 ug locate "온톨로지에서 찾아줘"     # 지칭 대상 (clear / likely / clarify / none)
 ug infer "좋아 이어서 하자" --transcript <session.jsonl>   # + 연속성·유사 발화 → emit 판정 JSON
 ```
 
-**locate/infer 학습 파이프라인** (선택 — 없으면 `projects.yaml` 등록 소유자만으로 판정):
+**locate/infer 학습 파이프라인** (선택. 없으면 `projects.yaml` 등록 소유자만으로 판정하고, 연속성은 학습 없이도 동작):
 
 ```bash
 cd skills/uug-pattern-analytics
-python3 scripts/tag_targets.py            # 발화별 타깃 태깅 (증분)
-python3 scripts/keyword_map.py            # 키워드 → 작업 프로젝트 분포
+python3 scripts/tag_targets.py            # 발화별 타깃 태깅 (증분, Claude Code·Codex 트랜스크립트)
+python3 scripts/keyword_map.py            # tacit 키워드 → 작업 프로젝트 분포
 
-# 유사 발화 (zvec 은 Python ≥3.10 — 동기화 폴더 밖 venv 권장)
+# 유사 발화: zvec 은 Python ≥3.10. ug.py 는 기본으로 ~/.local/share/uug/venv 를 찾는다 (UUG_VENV_PY 로 변경)
 python3.11 -m venv ~/.local/share/uug/venv
 ~/.local/share/uug/venv/bin/pip install zvec sentence-transformers numpy pyyaml rdflib
 ~/.local/share/uug/venv/bin/python scripts/similar.py index
-~/.local/share/uug/venv/bin/python scripts/eval_targets.py --gate   # 넛지 규칙 실측
+~/.local/share/uug/venv/bin/python scripts/eval_targets.py --gate   # 힌트 규칙 실측
 ```
 
-**locate 훅 등록** — Claude Code `~/.claude/settings.json`:
+**수동 등록** (install.sh 를 쓰지 않을 때) — Claude Code `~/.claude/settings.json`:
 
 ```json
 {"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "timeout": 10,
@@ -197,7 +223,7 @@ timeout = 10
 
 **Propose ≠ execute.** UUG는 발화를 ground·정렬하고 **제안**한다. 워크플로·액션의 **실행**은 각 프로젝트(MSO 등)가 소유한다. UUG는 워크플로우를 실행·관리하지 않는다. (§11 경계)
 
-**User memory ≠ project worklog.** UUG는 UC/UP/UF를 기록한다. workflow node 실행 기록, auditlog, worklog는 프로젝트 레이어의 책임이다. UserPromptSubmit hook은 기록 side effect 없이 grounding context만 주입한다.
+**User memory ≠ project worklog.** UUG는 UC/UP/UF를 기록한다. workflow node 실행 기록, auditlog, worklog는 프로젝트 레이어의 책임이다. UserPromptSubmit hook은 user-memory 기록·dispatch·worklog 없이 context만 주입한다. 예외는 `ug infer --log`의 판정 로그 하나로, 원문 없이 판정 결과와 트랜스크립트 참조만 머신-로컬에 남긴다.
 
 **Machine-portable.** 절대경로 하드코딩 없음 — `__file__`/`.obsidian` 자동탐지/env/anchor. iCloud 동기·멀티머신 안전.
 
@@ -210,7 +236,7 @@ timeout = 10
 ## 의존성
 
 ```
-Python 3.10+
+Python 3.9+       # 핵심(ug.py·훅). 유사 발화(zvec)만 3.10+
 rdflib >= 7.0     # intent 레지스트리 TTL lookup
 PyYAML >= 6.0
 

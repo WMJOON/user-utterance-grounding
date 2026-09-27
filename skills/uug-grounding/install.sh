@@ -3,8 +3,11 @@
 #   기본값: Claude Code 설치
 #   --codex: Codex skill 링크 + UserPromptSubmit 훅 등록
 #   --all: Claude Code + Codex
+#   --prompt-hook: (legacy) ug-locate-hook 대신 ground 기반 ug-prompt-hook 등록
 #   1) 스킬을 ~/.{claude,codex}/skills/ 에 심링크 (경로 머신-무관: ~ 로 해석)
 #   2) UserPromptSubmit 훅을 provider 설정 파일에 등록 (merge, 멱등)
+#      기본 훅은 hooks/ug-locate-hook.py (v0.3.1~): explicit/tacit 판정 + 연속성 + 유사 발화,
+#      확신할 때만 주입. 기존 UUG 훅 등록(ug-prompt-hook / ug-locate-hook)은 교체되어 하나만 남는다.
 # 에이전트는 이 스크립트를 *실행하지 않는다* — 설정 자기수정 가드 때문. 사용자가 실행.
 # 끄기: ~/.claude/settings.json 또는 ~/.codex/config.toml 의 해당 UserPromptSubmit 블록 삭제 + 심링크 제거.
 set -euo pipefail
@@ -12,8 +15,8 @@ set -euo pipefail
 SKILL_SRC="$(cd "$(dirname "$0")" && pwd)"
 SKILL_NAME="uug-grounding"
 # 머신-무관 경로: 런타임에 $HOME 로 해석되도록 리터럴 보존
-CLAUDE_HOOK_CMD='python3 "$HOME/.claude/skills/uug-grounding/hooks/ug-prompt-hook.py"'
-CODEX_HOOK_CMD='python3 "$HOME/.codex/skills/uug-grounding/hooks/ug-prompt-hook.py"'
+HOOK_FILE="ug-locate-hook.py"
+CODEX_HOOK_ARG=" --codex"
 
 TARGETS=()
 for arg in "$@"; do
@@ -21,18 +24,22 @@ for arg in "$@"; do
     --codex) TARGETS+=(codex) ;;
     --all) TARGETS+=(claude codex) ;;
     --claude) TARGETS+=(claude) ;;
+    --prompt-hook) HOOK_FILE="ug-prompt-hook.py"; CODEX_HOOK_ARG="" ;;
     -h|--help)
-      sed -n '1,12p' "$0"
+      sed -n '1,/^# 끄기/p' "$0"
       exit 0
       ;;
     *) ;;
   esac
 done
 [ ${#TARGETS[@]} -eq 0 ] && TARGETS=(claude)
+CLAUDE_HOOK_CMD="python3 \"\$HOME/.claude/skills/uug-grounding/hooks/$HOOK_FILE\""
+CODEX_HOOK_CMD="python3 \"\$HOME/.codex/skills/uug-grounding/hooks/$HOOK_FILE\"$CODEX_HOOK_ARG"
 
 echo "uug-grounding 설치"
 echo "  소스: $SKILL_SRC"
 echo "  대상: ${TARGETS[*]}"
+echo "  훅:   $HOOK_FILE"
 
 install_link() {
   local target="$1"
@@ -55,10 +62,20 @@ except (FileNotFoundError, ValueError):
 ups = s.setdefault("hooks", {}).setdefault("UserPromptSubmit", [])
 if any(h.get("command") == cmd for g in ups for h in g.get("hooks", [])):
     print("[2] UserPromptSubmit 훅 이미 등록됨 — skip")
-else:
-    ups.append({"hooks": [{"type": "command", "command": cmd}]})
-    json.dump(s, open(settings_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    print(f"[2] UserPromptSubmit 훅 등록 → {settings_path}")
+    sys.exit(0)
+# 기존 UUG 훅(ug-prompt-hook / ug-locate-hook) 등록은 제거 — 두 훅이 함께 돌면 주입이 겹친다
+uug = ("uug-grounding/hooks/ug-prompt-hook.py", "uug-grounding/hooks/ug-locate-hook.py")
+removed = 0
+for g in ups:
+    before = len(g.get("hooks", []))
+    g["hooks"] = [h for h in g.get("hooks", []) if not any(u in h.get("command", "") for u in uug)]
+    removed += before - len(g["hooks"])
+ups[:] = [g for g in ups if g.get("hooks")]
+ups.append({"hooks": [{"type": "command", "command": cmd, "timeout": 10}]})
+json.dump(s, open(settings_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+if removed:
+    print(f"[2] 기존 UUG 훅 {removed}건 교체")
+print(f"[2] UserPromptSubmit 훅 등록 → {settings_path}")
 PY
 }
 
@@ -104,12 +121,13 @@ block = f'''{begin}
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
 command = {json.dumps(cmd, ensure_ascii=False) if "'" in cmd else "'" + cmd + "'"}
-timeout = 15
-statusMessage = "Grounding user prompt"
+timeout = 10
+statusMessage = "UUG: 지칭 프로젝트 확인"
 {end}
 '''
 open(config_path, "w", encoding="utf-8").write(text + block)
 print(f"[2] Codex UserPromptSubmit 훅 등록 → {config_path}")
+print("    ※ Codex 는 새 훅을 신뢰 승인 전까지 건너뛴다 — 대화형 codex 에서 /hooks 로 승인")
 
 # v0.0.3 used hooks.json. Remove only this UUG command there so a runtime that
 # reads both surfaces does not execute the grounding hook twice.
@@ -122,7 +140,8 @@ groups = hooks.get("UserPromptSubmit", [])
 new_groups = []
 removed = False
 for group in groups:
-    kept = [h for h in group.get("hooks", []) if h.get("command") != cmd]
+    kept = [h for h in group.get("hooks", [])
+            if "uug-grounding/hooks/ug-" not in h.get("command", "")]
     if len(kept) != len(group.get("hooks", [])):
         removed = True
     if kept:
@@ -150,9 +169,10 @@ for target in "${TARGETS[@]}"; do
   fi
 done
 
-echo "[3] 의존성:  pip install rdflib pyyaml"
+echo "[3] 의존성:  pip install rdflib pyyaml   (훅을 실행하는 python3 에 설치)"
 echo "[4] 설정:"
-echo "      - projects.yaml 에 본인 프로젝트 등록 (projects.example.yaml 복사)"
+echo "      - projects.yaml 에 본인 프로젝트 등록 (projects.example.yaml 복사, aliases=explicit / keywords=tacit)"
 echo "      - machine.yaml 은 첫 실행 시 .obsidian 자동탐지로 부트스트랩 (또는 machine.example.yaml 복사)"
-echo "      - ug use <project> 로 현재 작업 프로젝트 고정 → 신호0 발화도 추론"
-echo "완료. 다음 세션부터 매 발화 자동 grounding."
+echo "      - python3 scripts/ug.py doctor 로 경로·의존성 점검"
+echo "[5] (선택) 학습: skills/uug-pattern-analytics 의 tag_targets.py → keyword_map.py → similar.py index"
+echo "완료. 다음 세션부터 매 발화에서 지칭 프로젝트를 추론한다."

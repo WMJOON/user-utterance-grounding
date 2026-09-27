@@ -1,5 +1,27 @@
 # 변경 이력
 
+## v0.3.1 (2026-09-27) — `ug-locate-hook` 을 설치 기본값으로, 문서 정합성
+
+> **`install.sh` 가 기본으로 `hooks/ug-locate-hook.py` 를 등록한다.** v0.3.0 에서 새 훅을 추가했지만 설치 스크립트는 여전히 legacy `ug-prompt-hook` 을 등록했고, README 는 locate 훅을 따로 등록하라고 해 두 훅이 함께 돌 수 있었다. patch 로 낸 이유: CLI·스키마 계약 변경 없이 설치 기본값과 문서를 v0.3.0 기능에 맞춘 정정이다. legacy 훅은 `--prompt-hook` 으로 그대로 쓸 수 있다.
+
+### Changed
+
+| 변경 | 내용 |
+|------|------|
+| `install.sh` 기본 훅 | `ug-prompt-hook.py` → `ug-locate-hook.py` (Codex 는 `--codex` 인자 포함). `--prompt-hook` 으로 legacy 선택. |
+| 기존 등록 교체 | 재실행 시 이전에 등록된 UUG 훅(두 종류 모두)을 지우고 하나만 남긴다. 다른 훅은 보존. 멱등. |
+| Codex 안내 | 설치 후 대화형 `codex` 의 `/hooks` 에서 신뢰 승인이 필요하다고 출력. |
+| hook side effect 원칙 | "기록 금지" → "user-memory·dispatch·worklog 금지, `ug infer --log` 판정 로그(원문 없음)만 예외"로 명시 (README·uug-orchestration). |
+
+### Docs
+
+| 변경 | 내용 |
+|------|------|
+| README 빠른 시작 | 두 훅의 차이 표, `ug` 가 `python3 skills/uug-grounding/scripts/ug.py` 의 줄임이라는 안내, `ug list` 추가, 수동 등록 예시는 install.sh 대안으로 정리. |
+| README 다이어그램 | 기본 locate/infer 경로(clear·likely·clarify·inferred·침묵)와 학습 산출물 흐름 추가. |
+| 의존성 | 핵심은 Python 3.9+, 유사 발화(zvec)만 3.10+ 로 정정. |
+| SKILL 설명문 | uug-grounding·uug-pattern-analytics·uug-orchestration(0.0.6) 설명과 라우팅에 locate/infer·태깅 반영. |
+
 ## v0.3.0 (2026-09-27) — 발화별 타깃 태깅 + `locate`/`infer` (explicit·tacit, 연속성, 유사 발화)
 
 > **발화마다 "어느 프로젝트를 지칭했는가"를 태깅하고, 그 이력으로 매 프롬프트 지칭 대상을 추론하는 경로를 추가했다.** minor bump 사유: 새 CLI 계약 표면(`locate`, `infer`), 레지스트리 새 필드(`aliases`), 새 훅, pattern-analytics 신규 스크립트 4종. 기존 `ground`/`dispatch`/`resolve` 동작은 그대로다(하위호환).

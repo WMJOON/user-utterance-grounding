@@ -8,8 +8,10 @@ description: >
   (1) "이거 정리하자"·"착수해줘" 처럼 프로젝트 미명시 요청의 타깃 추론,
   (2) 프로젝트 식별자 → 현재 머신의 절대경로 해석(resolve),
   (3) 멀티머신 경로 drift 점검(doctor),
-  (4) (이후) user-memory(UC/UP/UF) 영속·검색.
-  status: MVP (grounding + 인덱스/리졸버). 메모리 레이어는 후속.
+  (4) 발화가 지칭하는 프로젝트 디렉토리 추론(ug locate / ug infer): explicit(id·aliases)
+      확정, tacit(keywords)은 학습 분포로 추정·clarify, 키워드 없으면 직전 턴 작업 경로(연속성)
+      → 유사 발화 폴백. 매 프롬프트 UserPromptSubmit 훅(ug-locate-hook, Claude Code·Codex).
+  user-memory(UC/UP/UF)는 uug-user-memory 가 담당.
 ---
 
 # uug-grounding
@@ -29,7 +31,7 @@ python3 scripts/ug.py list              # 등록 프로젝트
 
 ## locate 훅 (Claude Code + Codex)
 
-`hooks/ug-locate-hook.py` 하나를 두 클라이언트에 등록한다. 매 발화에 `ug.py infer` 를 돌려(~0.2s)
+`hooks/ug-locate-hook.py` 하나를 두 클라이언트에 등록한다(`install.sh` 기본값, v0.3.1~. legacy `ug-prompt-hook` 은 `--prompt-hook`). 매 발화에 `ug.py infer` 를 돌려(~0.2s)
 explicit(프로젝트 id·`aliases`) 은 대상 디렉토리 안내, tacit(`keywords`) 은 추정(likely) 또는 모호 시 clarify,
 키워드가 없으면 연속성(payload `transcript_path` 의 직전 턴 작업 경로) → 유사 발화 폴백으로 추론한다.
 

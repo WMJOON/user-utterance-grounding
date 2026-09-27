@@ -1,11 +1,12 @@
 ---
 name: uug-orchestration
-version: "0.0.5"
+version: "0.0.6"
 description: >
   user-utterance-grounding(UUG) 스킬팩의 라우터/진입점. 사용자 발화를 받아
   적절한 UUG 스킬로 라우팅한다. MSO mso-orchestration · MSM msm-orchestration 과
   동일한 orchestration 패턴. 다음 상황에서 사용한다:
-  (1) 사용자 발화의 타깃 프로젝트·intent가 불분명할 때 grounding 으로 먼저 정렬,
+  (1) 사용자 발화의 타깃 프로젝트·intent가 불분명할 때 grounding 으로 먼저 정렬
+      (지칭 프로젝트만 필요하면 ug locate/infer: explicit/tacit + 연속성, 모호하면 clarify),
   (2) grounded intent 에 따라 기록(user-memory)·패턴분석·프로젝트 액션으로 분기,
   (3) UUG 팩 전반의 정책(scope 규율·HITL·PII 가드) 강제.
 ---
@@ -19,13 +20,15 @@ UUG 스킬팩의 **정책·라우팅 레이어**. 발화를 grounding 한 뒤 �
 | 스킬 | 역할 | 상태 |
 |---|---|---|
 | **uug-orchestration** | 라우터/진입점 + 정책 (이 스킬) | ✅ |
-| **uug-grounding** | 발화 → {target_project, intent, slots} 정렬 + intent TTL/lookup + 위치 index + UserPromptSubmit 값전달 | ✅ |
+| **uug-grounding** | 발화 → {target_project, intent, slots} 정렬 + intent TTL/lookup + 위치 index + `ug locate`/`ug infer`(지칭 추론) + UserPromptSubmit 값전달(기본 `ug-locate-hook`) | ✅ |
 | **uug-user-memory** | UC/UP/UF 영속(vendored schema-driven wm 엔진 + bootstrap) | ✅ |
-| **uug-pattern-analytics** | 발화→intent 빈도·반복 탐지 → user-pattern 후보 (MVP; DuckDB·14 흡수는 후속) | ✅ MVP |
+| **uug-pattern-analytics** | 발화→intent 빈도·반복 탐지 → user-pattern 후보 · 발화별 타깃 태깅 · keyword-map · 유사 발화 색인 · 추론 평가 | ✅ |
 
 ## 라우팅 (utterance → action)
 
 ```
+발화 → (매 프롬프트) ug-locate-hook → ug infer: 지칭 프로젝트 clear / likely / clarify / inferred
+     │     └─ 학습 산출물: uug-pattern-analytics tag_targets → keyword_map → similar
 발화 → uug-grounding (utterance→intent 정렬)
      ├─ intent=record-memory  → uug-user-memory (scope=user/project 라우팅)
      ├─ 도메인 intent(프로젝트) → ug dispatch: 그 프로젝트의 뒷단 CLI 에 subprocess 위임
@@ -47,10 +50,11 @@ import 하지 않는다** — 프로세스 경계로 독립 테스트성 보존.
 - **user-memory ≠ project worklog**: UUG 기본 영속 타입은 UC/UP/UF다. workflow node 실행 기록은 각 프로젝트 work-memory가 소유한다.
 - **preference proposal ≠ slot spec mutation**: MSO workflow 상의 task rail/slot 명세는 MSO가 소유한다. UUG는 반복 이벤트와 user preference entity를 기억해 adjusted entity-filling 또는 proposal을 제공할 수 있지만, workflow slot spec을 직접 수정하지 않는다.
 - **MSO/MSM 편의 레이어**: MSO는 workflow/work-memory를, MSM(가칭)은 ontology KB와 AI 추론 경로 제약을 소유한다. UUG는 둘을 사용할 때 target/intent/entity-filling 편의를 제공한다.
-- **hook side effect 금지**: UserPromptSubmit hook은 grounding context 주입만 수행하고 기록·dispatch·worklog 생성을 하지 않는다.
+- **hook side effect 제한**: UserPromptSubmit hook은 context 주입만 수행하고 user-memory 기록·dispatch·worklog 생성을 하지 않는다.
+  예외는 `ug infer --log` 의 판정 로그(`~/.local/share/uug/locate-log.jsonl`) 하나다. 원문 없이 판정 결과와 트랜스크립트 참조만 남기는 머신-로컬 분석 재료이며, 끄려면 훅에서 `--log` 를 뺀다.
 - **MSO v0.6.3 throttle 경계**: Stop reminder throttle은 project provider hook의 사용자 출력 억제 정책이다. UUG 기본 hook은 UserPromptSubmit 값전달이므로 Stop throttle을 등록하지 않는다.
 - **PII 가드**: 공개 단위 push 전 `uug-grounding/check-private.sh` 통과 필수.
-- **HITL**: grounding 모호·필수 슬롯 미충족 시 사용자 확인.
+- **HITL**: grounding 모호·필수 슬롯 미충족 시 사용자 확인. 지칭 추론도 tacit 키워드가 갈라지면 clarify, 유사 발화는 자동 확정에 쓰지 않는다.
 
 ## 관련
 

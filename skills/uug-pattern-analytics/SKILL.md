@@ -8,7 +8,9 @@ description: >
   크로스-프로젝트 user 스코프. mso-conversation-analytics(turn 분석)·
   14_user-pattern-optimizer(발화 마이닝) 흡수 대상.
   다음 상황에서 사용한다: (1) 발화 모음에서 반복 워크플로우·마찰 탐지,
-  (2) intent 사용 빈도 측정, (3) UP 후보 추출 → uug-user-memory 기록.
+  (2) intent 사용 빈도 측정, (3) UP 후보 추출 → uug-user-memory 기록,
+  (4) 트랜스크립트 발화별 타깃 태깅(원문 미저장)·tacit 키워드 분포(keyword_map)·
+  유사 발화 색인(zvec + bge-m3) — ug locate/infer 의 학습 산출물, (5) 추론 방식 LOO 평가.
 ---
 
 # uug-pattern-analytics
