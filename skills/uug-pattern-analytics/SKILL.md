@@ -51,7 +51,7 @@ python3 scripts/keyword_map.py   # workspace/keyword-map.json 생성 + 요약 (t
 ```bash
 # 1회 셋업 (zvec 은 Python ≥3.10, venv 는 iCloud 밖에)
 python3.11 -m venv ~/.local/share/uug/venv
-~/.local/share/uug/venv/bin/pip install zvec sentence-transformers pyyaml rdflib
+~/.local/share/uug/venv/bin/pip install zvec numpy pyyaml rdflib
 V=~/.local/share/uug/venv/bin/python
 $V scripts/similar.py index              # 타깃 확정 발화 색인 (증분, --rebuild)
 $V scripts/similar.py query "<발화>" --candidates a,b
@@ -70,7 +70,8 @@ $V scripts/eval_targets.py --gate        # ug.py infer 넛지 규칙 재현 → 
 ```
 2026-09-27 결과(345건): 최빈값 32%, knn 49%, 리랭커 50%(이득 없음), 연속성 78%, 연속성→knn 폴백 77%(커버 ~100%).
 → 연속성이 주 신호, 유사 발화는 폴백·보강. 리랭커·ColBERT 는 보류.
-- 임베딩은 omlx 상주 `BAAI/bge-m3`(`~/.omlx/model_settings.json` pinned, ~20ms)를 쓰고 실패 시 로컬 로드로 폴백.
+- 임베딩은 OpenAI 호환 API의 `BAAI/bge-m3`(1024d)를 쓴다. URL은 `UUG_EMBED_URL` → 머신 로컬 `~/.local/share/uug/embedding-url` → 기존 `http://localhost:1234/v1/embeddings` 순서로 선택한다. GUI 실행에도 적용하려면 로컬 파일을 사용한다.
+- 임베딩 서버 장애 시 로컬 모델을 적재하지 않는다. 조회는 `embedding-unavailable`·빈 순위를 반환하며, `ug.py`는 명시·키워드·직전 작업 신호를 계속 사용한다. 색인·평가 작업은 임베딩 오류를 전파해 중단한다.
 
 ## 갱신 순서
 `tag_targets.py` → `keyword_map.py` → `similar.py index`

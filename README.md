@@ -190,7 +190,7 @@ python3 scripts/keyword_map.py            # tacit 키워드 → 작업 프로젝
 
 # 유사 발화: zvec 은 Python ≥3.10. ug.py 는 기본으로 ~/.local/share/uug/venv 를 찾는다 (UUG_VENV_PY 로 변경)
 python3.11 -m venv ~/.local/share/uug/venv
-~/.local/share/uug/venv/bin/pip install zvec sentence-transformers numpy pyyaml rdflib
+~/.local/share/uug/venv/bin/pip install zvec numpy pyyaml rdflib
 ~/.local/share/uug/venv/bin/python scripts/similar.py index
 ~/.local/share/uug/venv/bin/python scripts/eval_targets.py --gate   # 힌트 규칙 실측
 ```
@@ -242,9 +242,10 @@ PyYAML >= 6.0
 
 # 선택 — 유사 발화 (uug-pattern-analytics similar.py / eval_targets.py)
 zvec                   # 로컬 벡터 색인 (Python ≥3.10)
-sentence-transformers  # BAAI/bge-m3 로컬 로드 (폴백)
-numpy
-# 권장: OpenAI 호환 로컬 임베딩 서버에 bge-m3 상주 → UUG_EMBED_URL (기본 http://localhost:1234/v1/embeddings)
+numpy                 # 원격 임베딩 벡터 정규화
+sentence-transformers # 선택: eval_targets.py 리랭커 실험에만 사용
+# 임베딩 API URL: UUG_EMBED_URL → ~/.local/share/uug/embedding-url → 기본 localhost:1234/v1/embeddings
+# 서버 장애 시 이 머신에서 bge-m3를 로드하지 않고 유사 발화 추천만 건너뛴다.
 ```
 
 ---

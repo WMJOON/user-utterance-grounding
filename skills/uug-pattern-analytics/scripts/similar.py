@@ -29,20 +29,32 @@ import tag_targets  # noqa: E402  (트랜스크립트 파서·태깅 산출물 �
 INDEX = Path(os.environ.get("UUG_ZVEC_PATH", Path.home() / ".local" / "share" / "uug" / "zvec-utterances"))
 # paraphrase-multilingual-MiniLM 은 한국어 요청문("~해줘")끼리 내용과 무관하게 0.98 로 뭉쳐 부적합.
 # bge-m3 는 관련 0.7 / 무관 0.45 수준으로 구분된다 (콜드 스타트 ~3.6s).
-MODEL = "BAAI/bge-m3"
 DIM = 1024
 VEC = "dense"
 TOPK = 15
 MIN_SIM = 0.55   # 코사인 유사도가 이보다 낮은 이웃은 근거로 쓰지 않는다
 
 
-OMLX_URL = os.environ.get("UUG_EMBED_URL", "http://localhost:1234/v1/embeddings")
-OMLX_MODEL = "BAAI/bge-m3"   # ~/.omlx/model_settings.json 에 pinned(상주) 등록
+DEFAULT_EMBED_URL = "http://localhost:1234/v1/embeddings"
+EMBED_URL_FILE = Path.home() / ".local" / "share" / "uug" / "embedding-url"
+OMLX_MODEL = "BAAI/bge-m3"
 
 
-def _model():
-    from sentence_transformers import SentenceTransformer
-    return SentenceTransformer(MODEL)
+class EmbeddingUnavailable(RuntimeError):
+    """Configured embedding endpoint failed; never load a local model instead."""
+
+
+def _embedding_url():
+    """Environment override, then machine-local config, then legacy local API."""
+    override = os.environ.get("UUG_EMBED_URL")
+    if override:
+        return override
+    if EMBED_URL_FILE.exists():
+        url = EMBED_URL_FILE.read_text(encoding="utf-8").strip()
+        if not url:
+            raise EmbeddingUnavailable(f"Empty embedding URL in {EMBED_URL_FILE}")
+        return url
+    return DEFAULT_EMBED_URL
 
 
 def _omlx(texts, timeout):
@@ -51,20 +63,25 @@ def _omlx(texts, timeout):
     out = []
     for i in range(0, len(texts), 32):
         req = urllib.request.Request(
-            OMLX_URL, json.dumps({"model": OMLX_MODEL, "input": texts[i:i + 32]}).encode(),
+            _embedding_url(), json.dumps({"model": OMLX_MODEL, "input": texts[i:i + 32]}).encode(),
             {"content-type": "application/json"})
         data = json.load(urllib.request.urlopen(req, timeout=timeout))["data"]
         out += [d["embedding"] for d in sorted(data, key=lambda d: d["index"])]
     v = np.array(out, dtype="float32")
-    return v / np.linalg.norm(v, axis=1, keepdims=True)
+    if v.shape != (len(texts), DIM) or not np.isfinite(v).all():
+        raise ValueError(f"Invalid embedding shape or values: {v.shape}")
+    norms = np.linalg.norm(v, axis=1, keepdims=True)
+    if not np.all(norms > 0):
+        raise ValueError("Embedding endpoint returned a zero vector")
+    return v / norms
 
 
 def embed(texts, timeout=5):
-    """omlx 상주 bge-m3(~20ms) 우선, 실패 시 로컬 sentence-transformers(콜드 ~3.6s)로 폴백."""
+    """Use the configured bge-m3 endpoint; never load weights on this machine."""
     try:
         return _omlx(texts, timeout)
-    except Exception:
-        return _model().encode(texts, batch_size=32, normalize_embeddings=True, show_progress_bar=False)
+    except Exception as exc:
+        raise EmbeddingUnavailable("bge-m3 embedding endpoint unavailable") from exc
 
 
 def _open(create=False):
@@ -93,11 +110,7 @@ SEEN = INDEX.parent / "zvec-utterances.seen.json"
 
 def cmd_index(args):
     import zvec
-    if args.rebuild and INDEX.exists():
-        shutil.rmtree(INDEX)
-        SEEN.unlink(missing_ok=True)
-    col = _open(create=not INDEX.exists())
-    seen = set(json.loads(SEEN.read_text())) if SEEN.exists() else set()
+    seen = set(json.loads(SEEN.read_text())) if SEEN.exists() and not args.rebuild else set()
 
     tags = {}
     for line in tag_targets.OUT.open(encoding="utf-8"):
@@ -114,7 +127,12 @@ def cmd_index(args):
         print("[similar] 신규 0건")
         return 0
 
+    # Finish remote embedding before touching the index, including --rebuild.
     vecs = embed([t for _, _, t in todo], timeout=120)
+    if args.rebuild and INDEX.exists():
+        shutil.rmtree(INDEX)
+        SEEN.unlink(missing_ok=True)
+    col = _open(create=not INDEX.exists())
     docs = [zvec.Doc(id=_doc_id(*key),
                      fields={"target": r["target"], "source": r["ref"]["source"],
                              "file": key[0], "ref_id": key[1]},
@@ -144,7 +162,10 @@ def query(utterance, candidates=None):
     import zvec
     if not INDEX.exists():
         return {"status": "no-index", "ranking": []}
-    v = embed([utterance])[0]
+    try:
+        v = embed([utterance])[0]
+    except EmbeddingUnavailable:
+        return {"status": "embedding-unavailable", "ranking": []}
     col = _open()
     res = col.query(queries=zvec.VectorQuery(VEC, vector=[float(x) for x in v]),
                     topk=TOPK, output_fields=None, include_vector=False)
