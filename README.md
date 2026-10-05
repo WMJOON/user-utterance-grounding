@@ -157,6 +157,12 @@ bash install.sh --codex                  # ~/.codex/skills 심링크 + Codex 훅
 bash install.sh --all                    # Claude Code + Codex
 ```
 
+> [!note] 훅 구성 (2026-10-05 점검)
+> `install.sh`가 등록하는 `ug-locate-hook`은 프로젝트 지칭만 추론한다. 이 머신의 전역 설정(`~/.claude/settings.json`)에는
+> 그 상위 호환인 `~/.claude/hooks/uug-context-hook.py`(`ug.py infer` + `dispatch`, 대상 프로젝트의 agent-context 넛지)가
+> 하나만 등록되어 있다. 두 훅을 함께 등록하지 않는다(중복 주입). MSO `mso-work-memory/hooks/uug-context-hook.py` 사본은
+> `infer` 이전 판이므로 copy-form 으로 배포할 때 전역판을 기준으로 갱신해야 한다.
+
 `machine.yaml`은 `.obsidian` 자동탐지로 생략할 수 있다. 설치 스크립트는 여러 번 실행해도 결과가 같고, 이전 버전이 등록한 UUG 훅이 있으면 교체해 **하나만** 남긴다.
 
 **어떤 훅이 등록되나** (v0.3.1~ 기본값 변경):

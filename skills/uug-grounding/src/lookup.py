@@ -1,7 +1,7 @@
 """user-utterance-grounding — Lookup API (RDFLib, 서버 없음).
 
 SoT = instances/user_intents.ttl (엄밀 TTL) + (선택) 프로젝트별 intent 레지스트리.
-mso-intent-registry/src/lookup.py 의 패턴을 복사·adapt(직접 의존 X).
+mso-intent-analytics/src/lookup.py 의 패턴을 복사·adapt(직접 의존 X).
 ug.py 의 grounding 이 match_intent() 를 호출한다.
 
 멀티-레지스트리 브리지 (§11 전제 #1):

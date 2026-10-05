@@ -61,7 +61,7 @@ explicit(프로젝트 id·`aliases`) 은 대상 디렉토리 안내, tacit(`keyw
 | `machine.yaml` | **gitignore** | 이 머신의 `anchors: {name: 절대경로}` |
 | `machine.example.yaml` | 싱크됨 | 새 머신용 템플릿 |
 
-> **MSM 패턴**: intent 는 축약 yaml 이 아니라 엄밀 TTL 로 정의(SoT)하고, RDFLib(lookup.py)로 컨버팅해 런타임 소비. mso-intent-registry 구조를 복사·adapt(직접 의존 X).
+> **MSM 패턴**: intent 는 축약 yaml 이 아니라 엄밀 TTL 로 정의(SoT)하고, RDFLib(lookup.py)로 컨버팅해 런타임 소비. mso-intent-analytics 구조를 복사·adapt(직접 의존 X).
 
 > **멀티-레지스트리 브리지 (§11 전제 #1)**: `lookup.py` 는 **namespace-agnostic** — intent/술어를 로컬명 기준으로 읽어 `uug:`·`mso:` 및 임의 프로젝트 레지스트리를 합쳐 ground 한다. `projects.yaml` 의 `intent_registry`(프로젝트 루트 상대 TTL 경로) 선언 시 그 도메인 intent 가 grounding 에 포함되고, 매칭되면 `source_project` 로 target_project 가 함의된다. MSO 운영 intent(`dispatch_ticket`·`query_audit_log` 등)를 UUG 가 ground → orchestration 이 `intent_id` 를 mso-utterance-grounding 뒷단에 전달.
 

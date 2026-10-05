@@ -3,7 +3,7 @@ name: uug_nlu_intent
 version: "0.1.0"
 description: >
   user-utterance-grounding NLU Intent Layer Schema.
-  Intent / SlotSpec / SessionContext 클래스 정의. mso-intent-registry 의
+  Intent / SlotSpec / SessionContext 클래스 정의. mso-intent-analytics 의
   nlu_intent.yaml 을 복사·adapt(직접 의존 X) — verb/target 을 user/cross-project
   도메인으로 재작성. SoT 는 instances/user_intents.ttl (TTL), 이 스키마는 OWL/
   SHACL/JSON-schema 생성·검증용. (MSM 패턴: 엄밀 정의 → 컨버팅해서 사용.)
