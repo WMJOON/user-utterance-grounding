@@ -49,7 +49,7 @@ import 하지 않는다** — 프로세스 경계로 독립 테스트성 보존.
 - **utterance→intent = UUG / intent→workflow-action = 해당 프로젝트(MSO 등)**. 경계 침범 금지 (planning §11).
 - **user-memory ≠ project worklog**: UUG 기본 영속 타입은 UC/UP/UF다. workflow node 실행 기록은 각 프로젝트 work-memory가 소유한다.
 - **preference proposal ≠ slot spec mutation**: MSO workflow 상의 task rail/slot 명세는 MSO가 소유한다. UUG는 반복 이벤트와 user preference entity를 기억해 adjusted entity-filling 또는 proposal을 제공할 수 있지만, workflow slot spec을 직접 수정하지 않는다.
-- **MSO/MSM 편의 레이어**: MSO는 workflow/work-memory를, MSM(가칭)은 ontology KB와 AI 추론 경로 제약을 소유한다. UUG는 둘을 사용할 때 target/intent/entity-filling 편의를 제공한다.
+- **MSO/MSM 편의 레이어**: MSO는 workflow/work-memory를, SKB(semantic-knowledge-base)는 ontology KB와 AI 추론 경로 제약을 소유한다. UUG는 둘을 사용할 때 target/intent/entity-filling 편의를 제공한다.
 - **hook side effect 제한**: UserPromptSubmit hook은 context 주입만 수행하고 user-memory 기록·dispatch·worklog 생성을 하지 않는다.
   예외는 `ug infer --log` 의 판정 로그(`~/.local/share/uug/locate-log.jsonl`) 하나다. 원문 없이 판정 결과와 트랜스크립트 참조만 남기는 머신-로컬 분석 재료이며, 끄려면 훅에서 `--log` 를 뺀다.
 - **MSO v0.6.3 throttle 경계**: Stop reminder throttle은 project provider hook의 사용자 출력 억제 정책이다. UUG 기본 hook은 UserPromptSubmit 값전달이므로 Stop throttle을 등록하지 않는다.
