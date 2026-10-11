@@ -1,6 +1,6 @@
 ---
 name: uug-pattern-analytics
-version: "0.1.0"
+version: "0.2.0"
 description: >
   사용자 발화/turns 패턴 탐지·분석. 발화를 uug-grounding 으로 분류해 intent 빈도·
   반복(워크플로우 패턴/마찰)을 측정하고 user-pattern(UP) 후보를 낸다. UP 는
@@ -85,3 +85,7 @@ $V scripts/eval_targets.py --gate        # ug.py infer 넛지 규칙 재현 → 
 ## 스코프 경계
 
 UP(크로스-프로젝트 user-레벨 행동) ↔ work-memory PT(프로젝트-레벨 패턴). 프로젝트 PT 가 ≥2 프로젝트에서 반복되면 uug-user-memory 로 `derived-from` 승격(planning §2).
+
+## Antigravity 기록 (v0.4.0 bundle)
+
+태깅 파서는 Antigravity app/CLI/IDE의 brain/*/.system_generated/logs/transcript_full.jsonl도 검색한다. USER_EXPLICIT 발화와 PLANNER_RESPONSE 도구 입력을 읽고 사용자 원문은 산출물에 저장하지 않는다.

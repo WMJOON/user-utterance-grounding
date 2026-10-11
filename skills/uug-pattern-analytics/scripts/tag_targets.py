@@ -33,6 +33,10 @@ OUT = SKILL_DIR / "workspace" / "utterance-targets.jsonl"
 
 CLAUDE_GLOB = (Path.home() / ".claude" / "projects", "*/*.jsonl")
 CODEX_GLOB = (Path.home() / ".codex" / "sessions", "**/*.jsonl")
+ANTIGRAVITY_GLOBS = tuple(
+    (Path.home() / ".gemini" / product / "brain", "*/.system_generated/logs/transcript_full.jsonl")
+    for product in ("antigravity", "antigravity-cli", "antigravity-ide")
+)
 
 # 사람이 친 발화가 아닌 user 메시지 (슬래시 명령·훅 주입·인터럽트·지침 주입)
 NOISE_PREFIX = ("<command-", "<local-command", "<system-reminder", "[Request interrupted",
@@ -89,14 +93,32 @@ def _codex_turns(path):
             if turn and not turn["cwd"]:
                 turn["cwd"] = cwd
         item = p.get("item") or {}
+        source, text = None, ""
         if p.get("type") == "item_completed" and item.get("type") == "UserMessage":
+            source = "event"
             text = " ".join(c.get("text", "") for c in item.get("content") or []).strip()
+        elif (d.get("type") == "response_item" and p.get("type") == "message"
+              and p.get("role") == "user"):
+            source = "message"
+            text = " ".join(c.get("text", "") for c in p.get("content") or []
+                            if c.get("type") in ("input_text", "text")).strip()
+        if source:
             if not text or text.startswith(NOISE_PREFIX):
+                continue
+            # Codex can persist the same input as both message and item_completed.
+            # Only pair adjacent opposite representations before any tool activity.
+            if (turn and turn["text"] == text and not turn["tool_text"]
+                    and source not in turn["representations"]):
+                turn["representations"].append(source)
+                if source == "event" and item.get("id"):
+                    turn["ref"] = item["id"]  # Preserve existing incremental tag identity.
                 continue
             if turn:
                 yield turn
-            turn = {"source": "codex", "file": str(path), "ref": item.get("id") or f"L{i}",
-                    "ts": d.get("timestamp"), "cwd": cwd, "text": text, "tool_text": []}
+            turn = {"source": "codex", "file": str(path),
+                    "ref": item.get("id") or p.get("id") or f"L{i}",
+                    "ts": d.get("timestamp"), "cwd": cwd, "text": text,
+                    "tool_text": [], "representations": [source]}
         elif turn and d.get("type") == "response_item" and p.get("type") in (
                 "function_call", "custom_tool_call", "local_shell_call"):
             turn["tool_text"].append(str(p.get("input") or p.get("arguments") or p.get("action") or ""))
@@ -104,8 +126,62 @@ def _codex_turns(path):
         yield turn
 
 
+def _antigravity_turns(path, cwd=None):
+    """Antigravity app/CLI transcript_full.jsonl; exclude injected/system steps."""
+    turn = None
+    for i, line in enumerate(Path(path).read_text(encoding="utf-8", errors="replace").splitlines()):
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(d, dict):
+            continue
+        if d.get("type") == "USER_INPUT" and d.get("source") == "USER_EXPLICIT":
+            text = d.get("content")
+            if not isinstance(text, str):
+                continue
+            # The remainder contains metadata and expanded slash commands, not user intent.
+            match = re.search(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", text, re.S)
+            text = (match.group(1) if match else text).strip()
+            text = re.sub(r"^/(?:plan|fast|boost)\s+", "", text)
+            if not text or text.startswith(NOISE_PREFIX):
+                continue
+            if turn:
+                yield turn
+            turn = {"source": "antigravity", "file": str(path),
+                    "ref": f"S{d.get('step_index', i)}", "ts": d.get("created_at"),
+                    "cwd": cwd, "text": text, "tool_text": [],
+                    "step_index": d.get("step_index", i), "responded": False}
+        elif turn and d.get("type") == "PLANNER_RESPONSE":
+            turn["responded"] = True
+            for call in d.get("tool_calls") or []:
+                turn["tool_text"].append(json.dumps(call.get("args") or {}, ensure_ascii=False))
+    if turn:
+        yield turn
+
+
+def transcript_turns(path, cwd=None):
+    """Select by recorded format, so custom transcript paths work too."""
+    with Path(path).open(encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(d, dict):
+                continue
+            if d.get("type") in ("USER_INPUT", "PLANNER_RESPONSE"):
+                return _antigravity_turns(path, cwd)
+            if d.get("type") in ("session_meta", "turn_context", "response_item", "event_msg"):
+                return _codex_turns(path)
+            if d.get("type") in ("user", "assistant"):
+                return _claude_turns(path)
+    return iter(())
+
+
 def iter_turns():
-    for (root, pat), fn in ((CLAUDE_GLOB, _claude_turns), (CODEX_GLOB, _codex_turns)):
+    for (root, pat), fn in ((CLAUDE_GLOB, _claude_turns), (CODEX_GLOB, _codex_turns),
+                           *((glob, _antigravity_turns) for glob in ANTIGRAVITY_GLOBS)):
         if root.is_dir():
             for f in sorted(root.glob(pat)):
                 yield from fn(f)

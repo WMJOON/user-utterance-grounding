@@ -1,4 +1,4 @@
-# user-utterance-grounding (UUG) v0.3.1
+# user-utterance-grounding (UUG) v0.4.0
 
 UUG는 **사용자 발화·의도 중심의 크로스-프로젝트 grounding 도구**다 — [MSO](https://github.com/WMJOON/multi-swarm-orchestrator)의 user-side 대응.
 
@@ -30,7 +30,7 @@ flowchart TD
     B -- "UUG_DISABLED=1<br/>또는 UUG_ENABLED=0" --> Z["no-op<br/>다른 repo 테스트 간섭 없음"]
     B -- "enabled" --> C{"진입 경로"}
 
-    C -- "UserPromptSubmit hook" --> H{"UUG_HOOKS_DISABLED=1?"}
+    C -- "UserPromptSubmit / PreInvocation hook" --> H{"UUG_HOOKS_DISABLED=1?"}
     H -- "yes" --> Z
     H -- "no · 기본" --> LH["ug-locate-hook<br/>ug infer"]
     H -- "no · --prompt-hook (legacy)" --> G["uug-grounding<br/>값전달 context 주입"]
@@ -40,7 +40,7 @@ flowchart TD
     KW -- "tacit, 한쪽으로 모임" --> LK["likely<br/>추정 + 확인 요청"]
     KW -- "tacit, 갈라짐" --> CF["clarify<br/>추측 금지, 연속성 기준 추천"]
     KW -- "없음" --> CT["직전 턴 작업 경로(연속성)<br/>→ 유사 발화 폴백"]
-    CT -- "둘이 일치할 때만" --> IN["inferred 힌트"]
+    CT -- "일치 / 명시적 연속 지시" --> IN["inferred 힌트"]
     CT -- "불일치" --> SL["침묵 + locate-log 기록"]
 
     C -- "CLI: ug ground / ug dispatch" --> G
@@ -116,7 +116,7 @@ ug dispatch "ticket-217 재실행"
 **오탐을 막는 장치**이자 **엉뚱한 세션에서 대상 디렉토리를 찾아 주는 장치**다. 과거 발화마다 "실제로 어느 프로젝트에서 작업했는가"를 태깅해 두고, 그 이력으로 새 발화의 지칭 대상을 판정한다.
 
 ```
-트랜스크립트(Claude Code·Codex)
+트랜스크립트(Claude Code·Codex·Antigravity)
   → tag_targets.py   발화마다 utterance_target(키워드) / work_target(그 턴의 도구 경로) — 원문 미저장
   → keyword_map.py   키워드 → 실제 작업 프로젝트 분포 (explicit / exclusive / ambiguous / sparse)
   → similar.py       타깃 확정 발화를 zvec 에 색인 (bge-m3)
@@ -128,10 +128,10 @@ ug dispatch "ticket-217 재실행"
 | explicit(프로젝트 id·`aliases`) | `clear` — 대상 디렉토리 | 항상 |
 | tacit(`keywords`), 한쪽으로 모임 | `likely` — 추정 + 확인 요청 | 항상 |
 | tacit, 여러 프로젝트로 갈라짐 | `clarify` — 추측 금지, 연속성·유사 발화 기준 추천 표시 | 항상 |
-| 키워드 없음 | `inferred` — 직전 턴 타깃 → 유사 발화 폴백 | 둘이 일치할 때만 |
+| 키워드 없음 | `inferred` — 직전 턴 타깃 → 유사 발화 폴백 | 직전 작업·유사 발화 일치 또는 명시적 연속 지시 |
 
 - **연속성이 주 신호다.** 작성자 환경 실측(345건): 직전 턴 타깃 78%, 유사 발화 kNN 49%, cross-encoder 리랭커 50%(채택 안 함). 자세한 수치는 [changelog](docs/changelog.md).
-- 현재 세션 디렉토리와 같은 대상이면 침묵한다. 모든 판정은 넛지 여부와 무관하게 `~/.local/share/uug/locate-log.jsonl` 에 **원문 없이** 남아 임계 튜닝 재료가 된다.
+- 같은 디렉토리에도 작업 시작 계약을 전달한다. 새 작업·대상 전환이면 해당 저장소의 지침과 관련 work-memory를 읽고 참조 ID·경로·적용 제약을 보고한다. 같은 작업에서 이미 조회했다면 근거를 재사용한다. 모든 판정은 넛지 여부와 무관하게 `~/.local/share/uug/locate-log.jsonl` 에 **원문 없이** 남아 임계 튜닝 재료가 된다.
 
 ---
 
@@ -154,7 +154,8 @@ pip install rdflib pyyaml                # 훅을 실행하는 python3 (3.9+) �
 cp projects.example.yaml projects.yaml   # 본인 프로젝트 등록: aliases(explicit) / keywords(tacit)
 bash install.sh                          # ~/.claude/skills 심링크 + UserPromptSubmit 훅(ug-locate-hook) 등록
 bash install.sh --codex                  # ~/.codex/skills 심링크 + Codex 훅 등록 → 대화형 codex 에서 /hooks 로 신뢰 승인
-bash install.sh --all                    # Claude Code + Codex
+bash install.sh --antigravity            # Antigravity app/CLI/IDE: 전역 PreInvocation + UUG 스킬 팩
+bash install.sh --all                    # Claude Code + Codex + Antigravity
 ```
 
 > [!note] 훅 구성 (2026-10-05 점검)
@@ -170,6 +171,7 @@ bash install.sh --all                    # Claude Code + Codex
 | 훅 | 판단 근거 | 대상을 모를 때 | 설치 |
 |----|-----------|----------------|------|
 | `hooks/ug-locate-hook.py` (기본) | explicit/tacit 키워드 + 직전 턴 작업 경로 + 유사 발화 | 확신할 때만 주입, 모호하면 clarify 지시 | `bash install.sh` |
+| `hooks/ug-antigravity-hook.py` | 같은 추론 + Antigravity camelCase payload/트랜스크립트 | 새 사용자 발화당 ephemeral context 한 번 | `bash install.sh --antigravity` |
 | `hooks/ug-prompt-hook.py` (legacy) | intent 매칭 + 키워드, 없으면 `last_project` | 마지막 사용 프로젝트로 채움 | `bash install.sh --prompt-hook` |
 
 legacy 훅은 대상을 말하지 않은 발화를 마지막 사용 프로젝트로 채우기 때문에, 여러 프로젝트를 오가면 엉뚱한 곳을 짚기 쉽다. 두 훅을 함께 등록하면 주입이 겹치므로 하나만 쓴다.
@@ -191,7 +193,7 @@ ug infer "좋아 이어서 하자" --transcript <session.jsonl>   # + 연속성�
 
 ```bash
 cd skills/uug-pattern-analytics
-python3 scripts/tag_targets.py            # 발화별 타깃 태깅 (증분, Claude Code·Codex 트랜스크립트)
+python3 scripts/tag_targets.py            # 발화별 타깃 태깅 (증분, Claude Code·Codex·Antigravity 트랜스크립트)
 python3 scripts/keyword_map.py            # tacit 키워드 → 작업 프로젝트 분포
 
 # 유사 발화: zvec 은 Python ≥3.10. ug.py 는 기본으로 ~/.local/share/uug/venv 를 찾는다 (UUG_VENV_PY 로 변경)
@@ -221,6 +223,19 @@ command = 'python3 "$HOME/.codex/skills/uug-grounding/hooks/ug-locate-hook.py" -
 timeout = 10
 ```
 
+Antigravity는 `~/.gemini/config/hooks.json`에 `uug-grounding.PreInvocation`을 등록한다.
+`transcriptPath`의 최신 `USER_EXPLICIT/USER_INPUT`에서 요청만 추출하고, `workspacePaths`를 사용한다.
+출력은 `injectSteps[].ephemeralMessage`이며 도구 호출 뒤 모델 재호출에는 안내를 반복하지 않는다.
+실제 앱/CLI 공통 전역 훅 위치와 JSON 계약은 [공식 Hooks 문서](https://antigravity.google/docs/hooks)를 따른다.
+
+```json
+{"uug-grounding": {"PreInvocation": [{"type": "command", "timeout": 10,
+  "command": "python3 \"$HOME/.gemini/config/skills/uug-grounding/hooks/ug-antigravity-hook.py\""}]}}
+```
+
+설치 스크립트는 기본 훅과 함께 `context_contract.py`를 사용한다. 기존 전역 wrapper를 따로 쓰는 환경은
+이 공통 formatter를 호출하도록 갱신해야 한다. 훅 출력만으로 모델이 기록 조회를 마쳤다고 간주하지 않는다.
+
 ---
 
 ## 설계 원칙
@@ -229,7 +244,7 @@ timeout = 10
 
 **Propose ≠ execute.** UUG는 발화를 ground·정렬하고 **제안**한다. 워크플로·액션의 **실행**은 각 프로젝트(MSO 등)가 소유한다. UUG는 워크플로우를 실행·관리하지 않는다. (§11 경계)
 
-**User memory ≠ project worklog.** UUG는 UC/UP/UF를 기록한다. workflow node 실행 기록, auditlog, worklog는 프로젝트 레이어의 책임이다. UserPromptSubmit hook은 user-memory 기록·dispatch·worklog 없이 context만 주입한다. 예외는 `ug infer --log`의 판정 로그 하나로, 원문 없이 판정 결과와 트랜스크립트 참조만 머신-로컬에 남긴다.
+**User memory ≠ project worklog.** UUG는 UC/UP/UF를 기록한다. workflow node 실행 기록, auditlog, worklog는 프로젝트 레이어의 책임이다. UserPromptSubmit/PreInvocation hook은 user-memory 기록·dispatch·worklog 없이 context만 주입한다. 예외는 `ug infer --log`의 판정 로그 하나로, 원문 없이 판정 결과와 트랜스크립트 참조만 머신-로컬에 남긴다.
 
 **Machine-portable.** 절대경로 하드코딩 없음 — `__file__`/`.obsidian` 자동탐지/env/anchor. iCloud 동기·멀티머신 안전.
 

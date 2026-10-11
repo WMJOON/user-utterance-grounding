@@ -155,7 +155,8 @@ def test_codex_installer_uses_config_toml_and_removes_legacy_hooks_json(tmp_path
     assert "hooks = true" in config
     assert "# BEGIN UUG_GROUNDING_HOOK" in config
     assert "[[hooks.UserPromptSubmit]]" in config
-    assert legacy_cmd in config
+    assert "ug-locate-hook.py\" --codex" in config
+    assert legacy_cmd not in config
 
     hooks_json = json.loads((codex / "hooks.json").read_text(encoding="utf-8"))
     remaining = hooks_json["hooks"]["UserPromptSubmit"][0]["hooks"]

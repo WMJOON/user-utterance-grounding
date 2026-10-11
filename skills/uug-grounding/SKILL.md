@@ -1,5 +1,6 @@
 ---
 name: uug-grounding
+version: "0.4.0"
 description: >
   사용자가 특정 {project-name} 을 명시하지 않은 발화에서, intent 유형으로 타깃
   프로젝트를 추론(grounding)한다. 또 프로젝트 위치를 머신-이식 가능한 레지스트리
@@ -10,7 +11,7 @@ description: >
   (3) 멀티머신 경로 drift 점검(doctor),
   (4) 발화가 지칭하는 프로젝트 디렉토리 추론(ug locate / ug infer): explicit(id·aliases)
       확정, tacit(keywords)은 학습 분포로 추정·clarify, 키워드 없으면 직전 턴 작업 경로(연속성)
-      → 유사 발화 폴백. 매 프롬프트 UserPromptSubmit 훅(ug-locate-hook, Claude Code·Codex).
+      → 유사 발화 폴백. 매 프롬프트 UserPromptSubmit 훅(ug-locate-hook, Claude Code·Codex; Antigravity는 PreInvocation).
   user-memory(UC/UP/UF)는 uug-user-memory 가 담당.
 ---
 
@@ -29,9 +30,9 @@ python3 scripts/ug.py infer "<발화>" --transcript <jsonl> [--log]   # 키워�
 python3 scripts/ug.py list              # 등록 프로젝트
 ```
 
-## locate 훅 (Claude Code + Codex)
+## locate 훅 (Claude Code + Codex + Antigravity)
 
-`hooks/ug-locate-hook.py` 하나를 두 클라이언트에 등록한다(`install.sh` 기본값, v0.3.1~. legacy `ug-prompt-hook` 은 `--prompt-hook`). 매 발화에 `ug.py infer` 를 돌려(~0.2s)
+Claude·Codex는 `hooks/ug-locate-hook.py`, Antigravity는 `hooks/ug-antigravity-hook.py`를 등록한다(`install.sh` 기본값, v0.3.1~. legacy `ug-prompt-hook` 은 `--prompt-hook`). 매 발화에 `ug.py infer` 를 돌려(~0.2s)
 explicit(프로젝트 id·`aliases`) 은 대상 디렉토리 안내, tacit(`keywords`) 은 추정(likely) 또는 모호 시 clarify,
 키워드가 없으면 연속성(payload `transcript_path` 의 직전 턴 작업 경로) → 유사 발화 폴백으로 추론한다.
 
@@ -39,9 +40,10 @@ explicit(프로젝트 id·`aliases`) 은 대상 디렉토리 안내, tacit(`keyw
 |---|---|---|
 | Claude Code | `~/.claude/settings.json` → `hooks.UserPromptSubmit` | plain stdout |
 | Codex | `~/.codex/config.toml` → `[features] hooks = true` + `[[hooks.UserPromptSubmit]]` (`--codex`) | `hookSpecificOutput.additionalContext` JSON |
+| Antigravity app/CLI/IDE | `~/.gemini/config/hooks.json` → `uug-grounding.PreInvocation` (`--antigravity`) | `injectSteps[].ephemeralMessage` JSON |
 
 - 넛지는 `emit=true` 일 때만 (키워드 없음이면 직전 작업과 유사 발화가 일치하거나, 직전 없이 유사 발화가 강할 때).
-  현재 세션 디렉토리와 같은 대상이면 침묵. 모든 판정은 `~/.local/share/uug/locate-log.jsonl` 에 원문 없이 기록.
+  같은 디렉토리도 대상 저장소의 작업 시작 계약을 전달한다. 모든 판정은 `~/.local/share/uug/locate-log.jsonl` 에 원문 없이 기록.
 - Codex 는 새 훅을 **신뢰(trust) 승인 전까지 조용히 건너뛴다.** 등록 후 대화형 `codex` 에서 `/hooks` 로 한 번 승인한다.
 - 같은 로직을 프로젝트별 사본으로도 등록하면 넛지가 중복되므로 한 곳(전역)에만 등록한다.
 - 실측(`uug-pattern-analytics/scripts/eval_targets.py --gate`, 345건): inferred 넛지 87%·clarify 후보 포함 94%·연속성 추천 94% 적중.
@@ -73,3 +75,20 @@ explicit(프로젝트 id·`aliases`) 은 대상 디렉토리 안내, tacit(`keyw
 ## 상태
 
 MVP — grounding + 인덱스/리졸버/doctor 동작. user-memory(UC/UP/UF) 영속 레이어와 user-pattern 자동 피더는 planning §8-3b 이후.
+
+## Codex 작업 시작 계약 (2026-10-11)
+
+- Codex 사용자 기록의 `response_item/message(role=user)`와 `item_completed/UserMessage`를 모두 읽고, 같은 입력의 이중 기록은 한 턴으로 합친다. 기존 event ID는 증분 태깅 참조로 보존한다.
+- 키워드 없는 명시적 짧은 제어 발화(이어서·계속·그만 등)는 transcript의 직전 타깃에 연결한다. 활성 컨텍스트가 없으면 확정하지 않는다. 이는 대상 안내이며 pause/cancel 실행 승인이 아니다.
+- `hooks/context_contract.py`가 대상과 후속 조회 절차를 생성한다. 새 작업·대상 전환이면 AGENTS/CLAUDE 및 대상 work-memory를 읽고 ID·경로·적용 제약 또는 기록 없음/조회 실패를 보고한다. 같은 작업에서 이미 읽은 근거는 재사용한다.
+- 같은 디렉토리도 계약을 전달한다. clarify는 대상 확인만 전달하고, likely는 확인 후 진행한다. 훅은 작업 실행이나 기록 쓰기를 하지 않는다.
+- 검증: `python3 -m pytest skills/uug-grounding/tests/test_codex_context.py -q` (repository 루트). 이 테스트는 transcript→추론→전달 계약을 검증하며 실제 모델의 행동 준수는 별도 대화 관측이 필요하다.
+
+## Antigravity 연결
+
+`bash install.sh --antigravity`는 UUG 팩의 네 스킬을 전역 discovery에 연결하고 기존 다른 훅을 보존한다.
+`--all`은 세 클라이언트를 포함한다. `--prompt-hook`은 Antigravity와 함께 쓰지 않는다.
+`transcriptPath`·`workspacePaths`의 camelCase payload와 실제 USER_INPUT/PLANNER_RESPONSE 기록을 소비한다.
+사용자 요청만 추출하고 시스템 주입·슬래시 명령 확장 메타데이터를 제외한다. 도구 루프에서는 반복 주입하지 않는다.
+별도 세션 상태를 쓰지 않고 현재 transcript로 판단한다. 로그는 기존 원문 없는 infer 판정 로그만 사용한다.
+검증: `python3 -m pytest skills/uug-grounding/tests/test_antigravity_context.py -q`.

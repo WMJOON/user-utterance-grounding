@@ -15,6 +15,7 @@ machine.yaml 없으면 .obsidian 마커를 위로 탐지해 vault 앵커를 자�
 의존성: pyyaml (stdlib 외).
 """
 import os
+import re
 import sys
 import json
 import datetime
@@ -639,8 +640,7 @@ def prev_target(transcript, utterance="", lookback=5):
         me = sys.modules[__name__]
         roots = tt.project_roots(me)
         subs = tt.submodule_dirs(roots)
-        parse = tt._codex_turns if "/.codex/" in str(transcript) else tt._claude_turns
-        turns = list(parse(Path(transcript)))
+        turns = list(tt.transcript_turns(Path(transcript)))
     except Exception:
         return None
     if turns and turns[-1]["text"].strip() == utterance.strip():
@@ -664,7 +664,7 @@ def do_infer(utterance, transcript=None):
       clear              explicit 지칭 → 항상 emit
       clarify            tacit 모호/충돌 → emit, 후보에 연속성(우선)·유사 발화로 추천 표시
       likely             tacit 단일 → emit (연속성과 어긋나면 clarify 로 격상)
-      inferred           키워드 없음 → prev 와 knn 이 일치하거나, prev 없이 knn 이 강할 때만 emit
+      inferred           키워드 없음 → prev 와 knn 일치 / 명시적 연속 제어 / prev 없이 강한 knn이면 emit
     """
     projects, anchors = load_projects(), load_anchors()
     loc = do_locate(utterance)
@@ -705,6 +705,8 @@ def do_infer(utterance, transcript=None):
     knn = top["project"] if top else None
     strong_knn = bool(top and top["weight"] >= SIMILAR_RECOMMEND
                       and top["neighbors"] >= SIMILAR_MIN_NEIGHBORS)
+    # Explicit continuation controls bind to the active transcript context (UD-0002).
+    continuation = bool(re.fullmatch(r"\s*(?:이어서|계속|그대로|재개|중단|그만)(?:해|해줘|해주세요|하자)?[.!… ]*", utterance))
     target = prev or knn
     out.update(knn=knn, knn_weight=top["weight"] if top else None)
     if not target:
@@ -712,7 +714,10 @@ def do_infer(utterance, transcript=None):
         return out
     why = ("직전 작업+유사 발화" if prev and prev == knn else "직전 작업" if prev else "유사 발화")
     out.update(status="inferred", candidates=[cand(target, why)],
-               emit=bool((prev and prev == knn) or (not prev and strong_knn)))
+               emit=bool((prev and (prev == knn or continuation)) or (not prev and strong_knn)),
+               emit_reason="explicit_continuation" if prev and continuation else
+               "context_agreement" if prev and prev == knn else
+               "strong_similarity" if not prev and strong_knn else "insufficient_agreement")
     return out
 
 
@@ -729,7 +734,7 @@ def log_infer(r, transcript, session_dir):
                "status": r["status"], "emit": r.get("emit"), "target": c.get("project"),
                "why": c.get("keyword"), "prev": r.get("prev"), "knn": r.get("knn"),
                "knn_weight": r.get("knn_weight"), "recommended": r.get("recommended"),
-               "keywords": r.get("keywords")}
+               "keywords": r.get("keywords"), "emit_reason": r.get("emit_reason")}
         with LOCATE_LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception:

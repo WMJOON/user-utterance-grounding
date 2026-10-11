@@ -1,5 +1,17 @@
 # 변경 이력
 
+## v0.4.0 (2026-10-11) — Antigravity 연결과 작업 시작 계약
+
+- Antigravity app/CLI/IDE 전역 `PreInvocation` 어댑터와 `install.sh --antigravity` 추가. `--all`은 Claude·Codex·Antigravity를 포함한다. 다른 훅을 보존하고 재설치는 멱등이다.
+- 실제 Antigravity USER_INPUT/PLANNER_RESPONSE 기록을 파싱하고 camelCase payload → ephemeral context로 전달한다. 새 사용자 발화당 한 번 안내하며 도구 루프에는 반복하지 않는다.
+- 공통 `context_contract.py`: 대상 지침·work-memory 조회와 참조 ID/경로 보고. 같은 디렉토리도 새 작업 조회를 안내하고 기존 같은 작업의 근거는 재사용한다.
+- Codex 사용자 기록 두 형식 지원, 이중 기록 제거, 기존 event 참조 ID 보존.
+- 명시적 짧은 연속 제어는 직전 작업을 안내한다. 실행 상태·승인 권한은 프로젝트에 남는다. 판정 로그에 `emit_reason` 추가.
+- grounding subprocess 테스트는 개인 레지스트리와 분리된 샘플을 사용한다. 오래된 Codex installer 기대값을 현재 locate 훅 계약에 맞췄다.
+- `check-private.sh` 기본 검사 범위를 전체 배포 저장소로 확장하고 추적된 중첩 사용자 데이터도 차단한다.
+- 알려진 외부 통합 한계: 로컬 MSO registry를 이용하는 기존 fixture 정확도 70%(80% 기준 미달), 동점 기대값과 현재 단일 후보의 margin 불일치. 변경 전 코드에서도 재현된다. MSO 어휘나 canonical 스키마는 이번 릴리즈에서 수정하지 않았다.
+- 훅 전달/CLI 응답은 검증하지만 모델의 모든 후속 행동 준수를 자동 강제하지 않는다.
+
 ## v0.3.1 (2026-09-27) — `ug-locate-hook` 을 설치 기본값으로, 문서 정합성
 
 > **`install.sh` 가 기본으로 `hooks/ug-locate-hook.py` 를 등록한다.** v0.3.0 에서 새 훅을 추가했지만 설치 스크립트는 여전히 legacy `ug-prompt-hook` 을 등록했고, README 는 locate 훅을 따로 등록하라고 해 두 훅이 함께 돌 수 있었다. patch 로 낸 이유: CLI·스키마 계약 변경 없이 설치 기본값과 문서를 v0.3.0 기능에 맞춘 정정이다. legacy 훅은 `--prompt-hook` 으로 그대로 쓸 수 있다.

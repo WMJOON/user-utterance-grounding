@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import shutil
 from pathlib import Path
 
 SKILL = Path(__file__).resolve().parent.parent
@@ -13,18 +14,26 @@ UG = SKILL / "scripts" / "ug.py"
 
 def _ground(utt, session=None, env_extra=None):
     """session: None=빈 세션(격리), dict=세션 상태 주입. env_extra: 임계 override 등."""
-    sess_path = tempfile.mktemp(suffix=".json")
-    if session is not None:
-        Path(sess_path).write_text(json.dumps(session), encoding="utf-8")
-    env = {**os.environ, "UG_SESSION": sess_path, **(env_extra or {})}
-    r = subprocess.run([sys.executable, str(UG), "ground", utt], capture_output=True, text=True, env=env)
-    Path(sess_path).unlink(missing_ok=True)
-    return r.returncode, r.stdout + r.stderr
+    with tempfile.TemporaryDirectory() as td:
+        fixture = Path(td)
+        for name in ("scripts", "src", "instances"):
+            shutil.copytree(SKILL / name, fixture / name, ignore=shutil.ignore_patterns("__pycache__"))
+        (fixture / "projects.yaml").write_text(
+            "sample-tools: {anchor: test, rel: ., keywords: [스킬]}\n"
+            "sample-kb: {anchor: test, rel: ., aliases: [KB], keywords: [리서치]}\n")
+        (fixture / "machine.yaml").write_text("anchors: {test: " + json.dumps(td) + "}\n")
+        sess_path = fixture / "session.json"
+        if session is not None:
+            sess_path.write_text(json.dumps(session), encoding="utf-8")
+        env = {**os.environ, "UG_SESSION": str(sess_path), **(env_extra or {})}
+        r = subprocess.run([sys.executable, str(fixture / "scripts/ug.py"), "ground", utt],
+                           capture_output=True, text=True, env=env)
+        return r.returncode, r.stdout + r.stderr
 
 
 def test_full_ground_resolves_target():
     rc, out = _ground("이 스킬 정리하자")
-    assert rc == 0 and "tidy-organize" in out and "agent-toolkit-forge" in out
+    assert rc == 0 and "tidy-organize" in out and "sample-tools" in out
 
 
 def test_required_slot_reprompts():
@@ -48,13 +57,13 @@ def test_user_tie_falls_back_ambiguous():
 
 def test_margin_one_commits_by_default():
     """margin 1(tidy 2 hits vs record 1 hit)은 기본 임계(1)에선 commit — 비회귀."""
-    rc, out = _ground("기록 정리하자", session={"last_project": "agent-toolkit-forge"})
+    rc, out = _ground("기록 정리하자", session={"last_project": "sample-tools"})
     assert rc == 0 and "tidy-organize" in out and "모호" not in out
 
 
 def test_margin_threshold_env_override():
     """UG_AMBIGUOUS_MARGIN_USER=2 로 올리면 margin 1 도 ambiguous 로 떨어진다 (튜닝 레버)."""
-    rc, out = _ground("기록 정리하자", session={"last_project": "agent-toolkit-forge"},
+    rc, out = _ground("기록 정리하자", session={"last_project": "sample-tools"},
                       env_extra={"UG_AMBIGUOUS_MARGIN_USER": "2"})
     assert rc == 2 and "모호" in out and "margin=1" in out
     assert "tidy-organize" in out and "record-memory" in out
@@ -66,8 +75,8 @@ def test_zero_signal_reprompts_when_no_session():
 
 
 def test_zero_signal_infers_from_last_project():
-    rc, out = _ground("착수하자", session={"last_project": "agent-toolkit-forge"})
-    assert rc == 0 and "work-on-project" in out and "agent-toolkit-forge" in out
+    rc, out = _ground("착수하자", session={"last_project": "sample-tools"})
+    assert rc == 0 and "work-on-project" in out and "sample-tools" in out
 
 
 def test_no_intent_match():

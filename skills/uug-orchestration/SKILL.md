@@ -1,6 +1,6 @@
 ---
 name: uug-orchestration
-version: "0.0.6"
+version: "0.0.7"
 description: >
   user-utterance-grounding(UUG) 스킬팩의 라우터/진입점. 사용자 발화를 받아
   적절한 UUG 스킬로 라우팅한다. MSO mso-orchestration · MSM msm-orchestration 과
@@ -20,7 +20,7 @@ UUG 스킬팩의 **정책·라우팅 레이어**. 발화를 grounding 한 뒤 �
 | 스킬 | 역할 | 상태 |
 |---|---|---|
 | **uug-orchestration** | 라우터/진입점 + 정책 (이 스킬) | ✅ |
-| **uug-grounding** | 발화 → {target_project, intent, slots} 정렬 + intent TTL/lookup + 위치 index + `ug locate`/`ug infer`(지칭 추론) + UserPromptSubmit 값전달(기본 `ug-locate-hook`) | ✅ |
+| **uug-grounding** | 발화 → {target_project, intent, slots} 정렬 + intent TTL/lookup + 위치 index + `ug locate`/`ug infer`(지칭 추론) + UserPromptSubmit / Antigravity PreInvocation 값전달 | ✅ |
 | **uug-user-memory** | UC/UP/UF 영속(vendored schema-driven wm 엔진 + bootstrap) | ✅ |
 | **uug-pattern-analytics** | 발화→intent 빈도·반복 탐지 → user-pattern 후보 · 발화별 타깃 태깅 · keyword-map · 유사 발화 색인 · 추론 평가 | ✅ |
 
@@ -50,7 +50,7 @@ import 하지 않는다** — 프로세스 경계로 독립 테스트성 보존.
 - **user-memory ≠ project worklog**: UUG 기본 영속 타입은 UC/UP/UF다. workflow node 실행 기록은 각 프로젝트 work-memory가 소유한다.
 - **preference proposal ≠ slot spec mutation**: MSO workflow 상의 task rail/slot 명세는 MSO가 소유한다. UUG는 반복 이벤트와 user preference entity를 기억해 adjusted entity-filling 또는 proposal을 제공할 수 있지만, workflow slot spec을 직접 수정하지 않는다.
 - **MSO/MSM 편의 레이어**: MSO는 workflow/work-memory를, SKB(semantic-knowledge-base)는 ontology KB와 AI 추론 경로 제약을 소유한다. UUG는 둘을 사용할 때 target/intent/entity-filling 편의를 제공한다.
-- **hook side effect 제한**: UserPromptSubmit hook은 context 주입만 수행하고 user-memory 기록·dispatch·worklog 생성을 하지 않는다.
+- **hook side effect 제한**: UserPromptSubmit/PreInvocation hook은 context 주입만 수행하고 user-memory 기록·dispatch·worklog 생성을 하지 않는다.
   예외는 `ug infer --log` 의 판정 로그(`~/.local/share/uug/locate-log.jsonl`) 하나다. 원문 없이 판정 결과와 트랜스크립트 참조만 남기는 머신-로컬 분석 재료이며, 끄려면 훅에서 `--log` 를 뺀다.
 - **MSO v0.6.3 throttle 경계**: Stop reminder throttle은 project provider hook의 사용자 출력 억제 정책이다. UUG 기본 hook은 UserPromptSubmit 값전달이므로 Stop throttle을 등록하지 않는다.
 - **PII 가드**: 공개 단위 push 전 `uug-grounding/check-private.sh` 통과 필수.
@@ -60,3 +60,7 @@ import 하지 않는다** — 프로세스 경계로 독립 테스트성 보존.
 
 - 설계 정본: `01_user-utterance-grounding/planning/user-memory-architecture.md`
 - 선례: MSO `mso-orchestration`, MSM `msm-orchestration`.
+
+## 클라이언트 전달 계약 (v0.4.0)
+
+Claude Code·Codex·Antigravity는 공통 작업 시작 계약을 받는다. 새 작업/대상 전환 시 대상 저장소 지침과 관련 work-memory를 읽고 근거를 보고한다. 같은 작업의 이미 읽은 맥락은 재사용한다. 경로 전달·계약 주입은 실제 모델의 행동 완료 증거가 아니다.

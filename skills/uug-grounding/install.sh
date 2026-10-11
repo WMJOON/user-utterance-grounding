@@ -2,7 +2,8 @@
 # install.sh — uug-grounding 글로벌 설치 (사용자가 직접 실행).
 #   기본값: Claude Code 설치
 #   --codex: Codex skill 링크 + UserPromptSubmit 훅 등록
-#   --all: Claude Code + Codex
+#   --antigravity: Antigravity app/CLI/IDE global skills + PreInvocation hook
+#   --all: Claude Code + Codex + Antigravity
 #   --prompt-hook: (legacy) ug-locate-hook 대신 ground 기반 ug-prompt-hook 등록
 #   1) 스킬을 ~/.{claude,codex}/skills/ 에 심링크 (경로 머신-무관: ~ 로 해석)
 #   2) UserPromptSubmit 훅을 provider 설정 파일에 등록 (merge, 멱등)
@@ -22,7 +23,8 @@ TARGETS=()
 for arg in "$@"; do
   case "$arg" in
     --codex) TARGETS+=(codex) ;;
-    --all) TARGETS+=(claude codex) ;;
+    --all) TARGETS+=(claude codex antigravity) ;;
+    --antigravity) TARGETS+=(antigravity) ;;
     --claude) TARGETS+=(claude) ;;
     --prompt-hook) HOOK_FILE="ug-prompt-hook.py"; CODEX_HOOK_ARG="" ;;
     -h|--help)
@@ -40,6 +42,19 @@ echo "uug-grounding 설치"
 echo "  소스: $SKILL_SRC"
 echo "  대상: ${TARGETS[*]}"
 echo "  훅:   $HOOK_FILE"
+
+if [ "$HOOK_FILE" = "ug-prompt-hook.py" ]; then
+  for target in "${TARGETS[@]}"; do
+    if [ "$target" = "antigravity" ]; then
+      echo "--prompt-hook is unsupported for Antigravity" >&2
+      exit 2
+    fi
+  done
+fi
+
+install_antigravity() {
+  python3 "${SKILL_SRC}/scripts/install_antigravity.py" "$SKILL_SRC"
+}
 
 install_link() {
   local target="$1"
@@ -159,6 +174,10 @@ PY
 }
 
 for target in "${TARGETS[@]}"; do
+  if [ "$target" = "antigravity" ]; then
+    install_antigravity
+    continue
+  fi
   install_link "$target"
   if [ "$target" = "claude" ]; then
     install_claude_hook
