@@ -8,14 +8,15 @@ MSO가 **repository 단위의 작업 컨텍스트**(구조·워크플로·작업
 
 ## UUG가 해결하는 문제
 
-사용자가 여러 프로젝트를 횡단하며 에이전트와 일할 때 세 가지 마찰이 반복된다.
+사용자가 여러 프로젝트를 횡단하며 에이전트와 일할 때 다섯 가지 마찰이 반복된다.
 
 1. **타깃 모호**: "이거 정리하자"·"착수해줘" — 어느 프로젝트에 대한 요청인지 명시되지 않으면, 에이전트가 매번 되묻거나 잘못 짚는다.
 2. **위치 표류**: 같은 프로젝트가 머신마다 다른 절대경로에 있다. 사용자·에이전트가 경로를 기억하거나 다시 입력해야 한다.
 3. **기억·hand-off 부재**: 선호·결정·반복 패턴이 세션이 끝나면 사라진다. 다음 세션으로의 인계가 전적으로 사용자의 재설명에 의존한다.
 4. **지칭 오탐**: "온톨로지 작업하자"의 '온톨로지'처럼 여러 프로젝트에 걸친 말을 에이전트가 한 곳으로 단정하거나, 엉뚱한 디렉토리에서 연 세션에서 대상을 못 찾는다.
+5. **어휘 오인·반복 주입**: "repository"·"리서치" 같은 작업 어휘가 프로젝트 이름으로 읽히고, 이미 작업 중인 레포의 컨텍스트가 매 턴 다시 주입된다(작성자 로그 기준 주입의 59%).
 
-UUG는 이 넷에 각각 대응한다.
+UUG는 이 다섯에 각각 대응한다.
 
 | 문제 | UUG의 답 | 핵심 |
 |------|----------|------|
@@ -23,6 +24,7 @@ UUG는 이 넷에 각각 대응한다.
 | 위치 표류 | 머신-무관 레지스트리 + 런타임 **자가복구** | `projects.yaml` 앵커 + `machine.yaml` + `.obsidian` 탐지 |
 | 기억·hand-off 부재 | user-scope **영속 기억** + 패턴 분석 | `uug-user-memory` · `uug-pattern-analytics` |
 | 지칭 오탐 | 발화별 타깃 **태깅 이력**으로 explicit/tacit 판정 + 연속성 추론, 모호하면 **clarify** | `ug locate` · `ug infer` · `ug-locate-hook.py` |
+| 어휘 오인·반복 주입 | 어휘를 **유형별로 분류해 중요도를 달리**하고, 직전 레포와 같으면 **주입 생략** | `taxonomy/vocab_terms.ttl` · `apply_same_target_policy` |
 
 ```mermaid
 flowchart TD
@@ -74,7 +76,7 @@ flowchart TD
 
 ---
 
-## 다섯 가지 핵심
+## 여섯 가지 핵심
 
 ### 1. Utterance → Intent Grounding (namespace-agnostic 멀티-레지스트리)
 
@@ -112,7 +114,7 @@ ug dispatch "ticket-217 재실행"
 - **uug-user-memory**: user-context/user-pattern/user-preference(UC/UP/UF)를 jsonl + 시맨틱 인덱스 + 그래프로 자산화한다. MSO work-memory의 schema-driven 엔진을 user 스코프로 재사용하지만 타입은 UC/UP/UF로 제한한다. project-scope worklog는 각 프로젝트가 소유한다. "전에 이거 어떻게 하기로 했지?" 시맨틱 검색.
 - **uug-pattern-analytics**: 발화→intent 빈도·반복(워크플로 패턴/마찰)을 측정해 user-pattern 후보를 낸다 → uug-user-memory로 기록, grounding 트리거 정련 신호로 환류. 크로스-프로젝트 user 발화 스트림 대상.
 
-### 5. Locate / Infer — 발화별 타깃 태깅과 지칭 추론 (v0.3.0)
+### 5. Locate / Infer — 발화별 타깃 태깅과 지칭 추론
 
 **오탐을 막는 장치**이자 **엉뚱한 세션에서 대상 디렉토리를 찾아 주는 장치**다. 과거 발화마다 "실제로 어느 프로젝트에서 작업했는가"를 태깅해 두고, 그 이력으로 새 발화의 지칭 대상을 판정한다.
 
@@ -120,7 +122,7 @@ ug dispatch "ticket-217 재실행"
 트랜스크립트(Claude Code·Codex·Antigravity)
   → tag_targets.py   발화마다 utterance_target(키워드) / work_target(그 턴의 도구 경로) — 원문 미저장
   → keyword_map.py   키워드 → 실제 작업 프로젝트 분포 (explicit / exclusive / ambiguous / sparse)
-  → vocab_map.py     작업어휘(SKOS) → 레포 적용 빈도 (v0.5.0)
+  → vocab_map.py     작업어휘(SKOS) → 레포 적용 빈도
   → similar.py       타깃 확정 발화를 zvec 에 색인 (bge-m3)
   → ug infer         매 프롬프트: 키워드 + 연속성 + 유사 발화 → emit 판정
 ```
@@ -133,30 +135,64 @@ ug dispatch "ticket-217 재실행"
 | 키워드 없음 | `inferred` — 직전 턴 타깃 → 유사 발화 폴백 | 직전 작업·유사 발화 일치 또는 명시적 연속 지시 |
 
 - **연속성이 주 신호다.** 작성자 환경 실측(345건): 직전 턴 타깃 78%, 유사 발화 kNN 49%, cross-encoder 리랭커 50%(채택 안 함). 자세한 수치는 [changelog](docs/changelog.md).
-- **같은 대상이면 주입을 생략한다 (v0.5.0).** 대상이 세션의 직전 작업 레포와 같고 이 대화에서 이미 안내했다면 다시 주입하지 않는다(`emit_reason: same_as_prev`). 세션 첫 안내, 대상 전환, 연속성이 아닌 추천, 컨텍스트 압축 이후에는 다시 안내한다. 새 작업·대상 전환이면 해당 저장소의 지침과 관련 work-memory를 읽고 참조 ID·경로·적용 제약을 보고한다. 모든 판정은 넛지 여부와 무관하게 `~/.local/share/uug/locate-log.jsonl` 에 **원문 없이** 남아 임계 튜닝 재료가 된다.
+- 모든 판정은 넛지 여부와 무관하게 `~/.local/share/uug/locate-log.jsonl` 에 **원문 없이** 남아 임계 튜닝 재료가 된다. 언제 주입하는지는 6번의 규칙을 따른다.
 
-#### 작업어휘와 Binary Condition (v0.5.0)
+### 6. 어휘 유형 분류와 주입 조건 (v0.5.0)
 
-자주 쓰는 작업 어휘(리서치·정리·기록·릴리즈 …)와 지시문(해줘·하자·어때 …)을 intent 안의 문자열이 아니라 **SKOS 개념**으로 관리한다(`uug-grounding/taxonomy/vocab_terms.ttl`). 같은 말이 여러 뜻으로 쓰이면 개념을 나눈다 — 예: "bot 다 **정리**하자"(치우기)와 "개념을 skos**로 정리**해줘"(구조화).
+v0.5.0 의 두 축이다. **어휘를 유형별로 분류해 중요도를 달리**하고, **직전 레포와 같으면 주입을 생략**한다.
 
-작업어휘마다 네 축을 참/거짓 하나씩 갖는다(SHACL 로 강제). 타입 멤버십은 open world 라 "아니다"를 표현하지 못해 쓰지 않는다.
+#### 어휘 유형별 중요도
 
-| 축 | 묻는 것 |
-|----|--------|
+```
+:Utterance --:mentions--> :Term
+:Term a :ProjectName | :Keyword | :WorkTerm | :Directive
+```
+
+같은 단어라도 어느 클래스로 분류하느냐에 따라 해석이 달라진다. 'repository'를 `:ProjectName`으로 두면 서브모듈 디렉토리명과 맞아떨어져 엉뚱한 레포로 확정되고, `:WorkTerm`으로 두면 업무 유형으로만 읽힌다.
+
+| 유형 | 예 | 레포 판정에서의 중요도 | 정의 위치 |
+|------|----|-----------------------|----------|
+| `:ProjectName` | 레포 id·별칭 | **확정** (`clear`) | `projects.yaml` id·`aliases` |
+| `:Keyword` | 온톨로지·분석 | **추정** — 과거 작업 분포로 판단 (`likely`/`clarify`) | `projects.yaml` `keywords` |
+| `:WorkTerm` | 리서치·정리·기록·repository | **레포 지칭에 쓰지 않음** — 업무 유형으로만(동점 해소·C3) | `taxonomy/vocab_terms.ttl` |
+| `:Directive` | 해줘·하자·어때 | **점수에 넣지 않음** — 명령인지만 본다 | `taxonomy/vocab_terms.ttl` |
+
+`:WorkTerm` 은 Binary Condition 으로 정의한다. 네 속성을 `xsd:boolean` 으로 정확히 하나씩 갖고(SHACL `references/shapes/vocab_shapes.ttl`), '모름'은 허용하지 않는다. 타입 멤버십은 open world 라 "아니다"를 표현하지 못해 쓰지 않는다. MSO 클래스는 `uug:denotesType wf:Workflow` 처럼 가리키기만 한다.
+
+| 속성 | 묻는 것 |
+|------|--------|
 | `isWorkflow` | 여러 단계를 밟는 절차인가 |
 | `isRepository` | 저장소·디렉토리 단위 작업인가 |
 | `isExecution` | 실행 중 run/rail 제어인가 |
 | `isArtifact` | 산출물(문서·기록)이 남는가 |
 
-이 어휘로 세 조건을 판정한다. 후보를 지우지 않고 순서·추천만 바꾼다.
+같은 말이 다른 뜻으로 쓰이면 개념을 나눈다 — "bot 다 **정리**하자"는 `Tidy`(isRepository), "개념을 SKOS**로 정리**해줘"는 `Structure`(isArtifact). 지시문 어미는 작성자 발화 1,709턴으로 보정했다("~해볼까?"는 제안, "~거지"는 의견).
+
+#### 주입 조건: 직전 레포와 같으면 생략
+
+```
+:Session   --:prevRepo-->  :Repo_A
+:Utterance --:triggers-->  :Repo_B
+A = B → 생략 (emit_reason: same_as_prev)
+A ≠ B → 주입
+```
+
+- 다시 주입하는 예외: 세션 첫 안내, 마지막 주입 이후 컨텍스트 압축, 연속성이 아닌 추천(작업어휘 빈도·유사 발화), 추천 없는 모호 판정.
+- 주입 이력은 transcript 별로 `~/.local/share/uug/inject-state.json`(`UUG_INJECT_STATE`, 원문 없음)에 둔다. 판정(`ug infer`)은 그대로 두고 훅 경로(`apply_same_target_policy`)에서만 생략한다.
+- 작성자 locate-log 재생: 주입 1,482건 중 59%가 직전 레포의 반복이었고, 생략 규칙 적용 시 734건으로 줄었다(옛 로그는 추천 근거가 없어 추정치).
+- 주입될 때는 새 작업·대상 전환이면 해당 저장소의 지침과 관련 work-memory를 읽고 참조 ID·경로·적용 제약을 보고하도록 안내한다.
+
+#### 보조 조건 (Binary Condition)
+
+후보를 지우지 않고 순서·추천만 바꾼다(hard filter 가 아니라 가중).
 
 | 조건 | 질문 | 쓰임 |
 |------|------|------|
-| C1 | 작업어휘인가 | "repository"·"워크플로우" 같은 말을 프로젝트 이름(서브모듈 디렉토리명 등)으로 오인하지 않는다 |
-| C2 | 명령인가 | 발화 끝 지시문으로 판정. intent 키워드가 동점일 때만 facet 과 함께 순서를 정한다 |
+| C1 | `:WorkTerm` 인가 | 레포 지칭어에서 제외 |
+| C2 | 명령인가 | intent 키워드가 동점일 때만 facet 과 함께 순서를 정한다 |
 | C3 | 직전 레포에서 하던 업무인가 | 그 어휘가 직전 레포에서 드물고(적용 빈도 < 2%) 다른 레포에 몰려 있으면(점유 ≥ 50%) 그 레포를 추천하고 되묻는다 |
 
-C3 의 빈도는 `vocab_map.py` 가 과거 발화에서 학습한다. 작성자 환경 실측: '리서치'는 작업 신호로 확정된 25건 중 56%가 한 레포에 몰렸고, 실행·기록 같은 일반 어휘는 최대 점유 29~38%로 흩어졌다. LOO 평가에서 C3 가 발동한 4건 중 추천 정답 2건, 직전 레포 정답 1건 — 표본이 작고 임계값도 같은 데이터로 정한 초기값이라 **자동 확정에 쓰지 않는다**.
+C3 의 빈도는 `vocab_map.py` 가 작업 신호로 확정된 과거 발화만으로 학습한다. 작성자 환경 LOO 평가에서 발동 4건(추천 정답 2, 직전 레포 정답 1) — 표본이 작고 임계값도 같은 데이터로 정한 초기값이라 **자동 확정에 쓰지 않는다**.
 
 ---
 
@@ -303,7 +339,8 @@ sentence-transformers # 선택: eval_targets.py 리랭커 실험에만 사용
 - **Lv30 LLM fallback**: keyword-miss(~20%) 발화의 LLM 복구 경로 (현재 Lv10 키워드 grounding만).
 - **횡단 패턴 → 엄브렐러 제안**: `uug-pattern-analytics`가 사용자가 N개 프로젝트를 반복 횡단하는 패턴을 관측해 "엄브렐러/모노로 합쳐 가로지르는 워크플로우 생성"을 **제안**(실행은 프로젝트가). 미구현.
 - **user-memory 데이터 레이어**: UC/UP/UF 영속 저장소 위치·이름 확정.
-- **locate 학습 자동 갱신**: `tag_targets` → `keyword_map` → `similar index` 주기 실행과 locate-log 기반 임계 튜닝.
+- **locate 학습 자동 갱신**: `tag_targets` → `keyword_map` → `vocab_map` → `similar index` 주기 실행과 locate-log 기반 임계 튜닝(C3 임계값 재측정 포함).
+- **작업어휘 확장**: 현재 `:WorkTerm` 9개·`:Directive` 5개. 서브모듈 디렉토리명(`repository` 등) 대신 상위 디렉토리명으로 지칭하는 규칙, 판정 불가 지시문(약 61%) 축소.
 - **intent 동사 트리거 확장**: 현재 intent 매칭률이 낮다("고쳐줘/만들자" 미매칭). 태깅 이력의 `disagree`·미매칭 발화를 트리거 정련 근거로 사용.
 
 ---
