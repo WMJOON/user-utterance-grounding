@@ -104,7 +104,7 @@ def test_vocab_labels_union_into_triggers():
 def fake_registry(monkeypatch, tmp_path):
     projects = {
         "kb":  {"anchor": "vault", "rel": "kb", "keywords": ["리서치"]},
-        "hub": {"anchor": "vault", "rel": "hub", "keywords": ["콘텐츠 허브"]},
+        "hub": {"anchor": "vault", "rel": "hub", "keywords": ["콘텐츠 허브"]},   # :Keyword (alias 아님)
     }
     monkeypatch.setattr(ug, "load_projects", lambda: projects)
     monkeypatch.setattr(ug, "_umbrella_subs", lambda p, a: {"repository": "umbrella:sub/repository"})
@@ -170,9 +170,61 @@ def test_infer_none_keyword_redirects_by_vocab(fake_registry, monkeypatch):
 
 
 def test_infer_keeps_continuity_when_prev_applies(fake_registry, monkeypatch):
+    """작업어휘가 가리키는 레포 == 직전 레포 → 되묻지 않고 그대로 추정."""
     monkeypatch.setattr(ug, "prev_target", lambda t, u="": "kb")
     r = ug.do_infer("자료 조사 좀 해줘")
-    assert r["status"] == "inferred" and r["candidates"][0]["project"] == "kb"
+    assert r["status"] == "likely" and r["candidates"][0]["project"] == "kb"
+
+
+# ─── UD-0006: :ProjectName > :WorkTerm > :Keyword > :Directive ───
+def test_workterm_points_to_repo(fake_registry):
+    """v0.5.0 회귀: 작업어휘가 레포를 전혀 가리키지 못했다. 이제 학습 빈도로 추정한다."""
+    loc = ug.do_locate("리서치 해줘")
+    assert loc["status"] == "likely"
+    c = loc["candidates"][0]
+    assert c["project"] == "kb" and c["kind"] == "workterm" and c["share"] == 0.9
+
+
+def test_workterm_without_project_keyword_still_points(fake_registry):
+    """'자료 조사'는 projects.yaml 키워드가 아니지만 작업어휘(Research)라 레포를 가리킨다."""
+    loc = ug.do_locate("자료 조사 좀 해줘")
+    assert loc["status"] == "likely" and loc["candidates"][0]["project"] == "kb"
+
+
+def test_project_name_beats_workterm(fake_registry):
+    loc = ug.do_locate("hub 에서 리서치 해줘")
+    assert loc["status"] == "clear" and loc["candidates"][0]["project"] == "hub"
+
+
+def test_workterm_beats_keyword(fake_registry):
+    """작업어휘(→kb)와 주제어(→hub)가 갈리면 되묻되 작업어휘 쪽을 추천."""
+    loc = ug.do_locate("콘텐츠 허브 관련 리서치 해줘")
+    assert loc["status"] == "clarify"
+    assert loc["recommended"] == "kb" and loc["recommended_by"] == "작업어휘"
+    assert [c["project"] for c in loc["candidates"]] == ["kb", "hub"]
+
+
+def test_diffuse_workterm_gives_no_repo(fake_registry):
+    """여러 레포에 퍼진 작업어휘(점유 < 50%)는 레포 신호가 아니다."""
+    assert ug.do_locate("이거 실행해줘")["status"] == "none"
+
+
+def test_directive_alone_gives_no_repo(fake_registry):
+    assert ug.do_locate("좋아 해줘")["status"] == "none"
+
+
+def test_workterm_falls_back_to_keyword_without_map(fake_registry, monkeypatch, tmp_path):
+    """빈도 맵이 없으면 projects.yaml 키워드(:Keyword) 판정으로 폴백 — v0.4.0 동작."""
+    monkeypatch.setattr(ug, "VOCAB_MAP", tmp_path / "missing.json")
+    loc = ug.do_locate("리서치 해줘")
+    assert loc["status"] == "likely"
+    assert loc["candidates"][0]["project"] == "kb" and loc["candidates"][0]["kind"] == "tacit"
+
+
+def test_workterm_never_explicit(fake_registry):
+    """작업어휘는 확정 지칭어가 아니다 — 'repository' 서브모듈명은 빈도 맵이 없어도 무시."""
+    loc = ug.do_locate("repository 정리 방식을 바꾸자")
+    assert loc["status"] != "clear"
 
 
 # ─── '정리' 동음이의어 (2026-11-25 발화 분석) ───

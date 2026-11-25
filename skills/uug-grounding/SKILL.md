@@ -75,10 +75,11 @@ explicit(프로젝트 id·`aliases`) 은 대상 디렉토리 안내, tacit(`keyw
 - **ambiguous fallback (top-2 margin)**: `match_intent` 가 top-1·top-2 점수차(`margin`, 후보 1개면 None)를 산출하고, `margin < 임계` 면 commit 대신 `ambiguous`(HITL, 임계 창 내 후보 나열, rc 2). 임계는 스코프별 env 로 튜닝 — user `UG_AMBIGUOUS_MARGIN_USER`(기본 1: 동점만 HITL), 도메인 `UG_AMBIGUOUS_MARGIN_DOMAIN`(기본 0: 동점도 top-1 commit, §11.1 first-match-wins 비회귀). 동점 commit 은 결과의 `committed_low_margin`(dispatch JSON 은 `uug_margin`/`uug_committed_low_margin`)으로 관측 → uug-pattern-analytics 임계 튜닝 재료. 실측(fixture 50발화)상 오답은 margin 0 에 집중, margin ≥ 1 은 전건 정답이라 기본 임계 상향은 무익 — 키워드 가중 스코어링으로 margin 해상도 확보가 후속.
 
 - **Binary Condition (UD-0004)**: 후보를 지우지 않고 순서·추천만 바꾼다(UD-0001 가중 원칙).
-  - **C1 작업어휘인가** — 작업어휘 label("repository"·"워크플로우" 등)은 `locate` 에서 프로젝트 지칭어로 쓰지 않는다. 서브모듈 디렉토리명·alias 가 같아도 explicit 확정 금지(프로젝트 id 자체는 예외).
+  - **레포 판정 우선순위 (UD-0006)** — `:ProjectName`(id·alias, 확정) > `:WorkTerm`(작업어휘, `vocab-term-map.json` 에서 한 레포가 과반이면 추정) > `:Keyword`(projects.yaml keywords, 추정) > `:Directive`(레포 신호 없음). 작업어휘와 주제어가 갈리면 작업어휘 쪽을 추천하고 되묻는다.
+  - **C1 작업어휘인가** — 작업어휘 label("repository"·"워크플로우" 등)은 확정(explicit) 지칭어로 쓰지 않는다. 서브모듈 디렉토리명·alias 가 같아도 확정 금지(프로젝트 id 자체는 예외). 빈도 기반 추정에는 쓴다.
   - **C2 명령형인가** — 발화 끝 지시문(해줘·하자 / 어때·할까·?)으로 판정. 지시문은 trigger_keywords 에 넣지 않는다.
   - **동점 해소** — `match_intent` 가 margin 0 일 때만 facet·C2 호환 점수로 해소(`tiebreak`). facet 근거는 그 intent 가 이미 키워드로 센 어휘를 뺀 나머지에서만 가져온다(순환 근거 차단). 풀리면 `ambiguous` 해제, `margin` 은 관측값 그대로.
-  - **C3 직전 레포에서 그 업무를 하는가** — `infer` 가 `uug-pattern-analytics/workspace/vocab-term-map.json`(`vocab_map.py` 생성)을 읽어, 집중 어휘(점유 ≥ 50%, 관측 ≥ 10)가 직전 레포에서 드물면(적용 빈도 < 2%, 직전 레포 관측 ≥ 20) 그 어휘를 주로 쓰는 레포를 `recommended_by: 작업어휘 빈도` 로 추천하고 clarify 한다. 맵은 작업 신호(`target_via` 에 work)로 타깃이 정해진 발화만 센다 — 발화 키워드 레이블은 projects.yaml 키워드 순환이라 제외. 실측(2026-11-25 LOO): 발동 4건 중 추천 정답 2, 직전 레포 정답 1 — 표본 부족, 임계값은 같은 데이터로 정한 초기값.
+  - **C3 직전 레포에서 그 업무를 하는가** — `infer` 가 `uug-pattern-analytics/workspace/vocab-term-map.json`(`vocab_map.py` 생성)을 읽어, 집중 어휘(점유 과반 > 50%, 관측 ≥ 10)가 직전 레포에서 드물면(적용 빈도 < 2%, 직전 레포 관측 ≥ 20) 그 어휘를 주로 쓰는 레포를 `recommended_by: 작업어휘 빈도` 로 추천하고 clarify 한다. 맵은 작업 신호(`target_via` 에 work)로 타깃이 정해진 발화만 센다 — 발화 키워드 레이블은 projects.yaml 키워드 순환이라 제외. 실측(2026-11-25 LOO): 발동 4건 중 추천 정답 2, 직전 레포 정답 1 — 표본 부족, 임계값은 같은 데이터로 정한 초기값.
 
 ## 상태
 

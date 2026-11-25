@@ -1,5 +1,15 @@
 # 변경 이력
 
+## v0.5.1 (2026-11-25) — 작업어휘를 레포 지칭 신호로 복원, 우선순위 명시
+
+> v0.5.0 의 C1 이 작업어휘 label 을 locate 의 확정 지칭어뿐 아니라 주제어(tacit)에서도 지워, "리서치 해줘"처럼 자주 쓰는 업무 발화가 레포를 전혀 가리키지 못했다(v0.4.0 은 추정). 레포 판정 규칙의 회귀 수정이라 patch 로 낸다.
+
+- **우선순위** `:ProjectName > :WorkTerm > :Keyword > :Directive`. `:WorkTerm` 은 `vocab-term-map.json`(어휘→레포 빈도)에서 한 레포가 과반이면 그 레포로 추정한다(`kind: workterm`). `:Keyword` 와 갈리면 되묻되 작업어휘 쪽을 추천(`recommended_by: 작업어휘`). `:Directive` 는 레포 신호가 없다.
+- **C1 범위 축소**: 작업어휘는 확정 지칭어(alias·서브모듈명)로만 쓰지 않는다. 'repository' 서브모듈명 오인 방지는 유지. 빈도 맵이 없거나 관측 10건 미만이면 `projects.yaml` 키워드 판정으로 폴백.
+- **집중 기준을 과반(50% 초과)으로**: `≥ 50%` 경계에서 점유 정확히 50%인 '릴리즈'가 LOO 신호 8건 모두 오답. C3 추천도 같은 기준을 쓴다. 작성자 환경 '리서치' 신호는 27건 중 16건 적중(59%).
+- `ug locate` 출력이 작업어휘 근거를 "작업어휘 N%"로 표시한다.
+- 테스트 8건 추가(작업어휘 → 레포, 우선순위 세 쌍, 분산 어휘·지시문 무신호, 맵 부재 폴백, 확정 지칭어 제외).
+
 ## v0.5.0 (2026-11-25) — 작업어휘 SKOS와 Binary Condition, 같은 대상 주입 생략
 
 - **작업어휘·지시문 SKOS 스킴** `taxonomy/vocab_terms.ttl` + `references/shapes/vocab_shapes.ttl`. 작업어휘는 `isWorkflow`/`isRepository`/`isExecution`/`isArtifact` 를 xsd:boolean 으로 정확히 하나씩 갖는다(SHACL). 어휘가 가리키는 MSO 클래스는 `uug:denotesType wf:Workflow` 로 가리키기만 한다. 소비 API `src/vocab.py`.

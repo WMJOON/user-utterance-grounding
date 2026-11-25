@@ -519,17 +519,50 @@ def _vocab_words():
         return set()
 
 
+def _workterm_signals(utterance):
+    """:WorkTerm → 레포 (UD-0006). vocab-term-map 에서 관측이 충분한(n ≥ VOCAB_MIN_OBS) 작업어휘만.
+    반환 (signals, handled_labels):
+      signals        {project: {"label", "concept", "share"}} — 한 레포 점유가 과반(> VOCAB_DOMINANT_SHARE)인 어휘
+      handled_labels 판정에 쓴 어휘의 label(소문자). 분산된 어휘(실행·기록 등)도 포함 —
+                     빈도가 '특정 레포가 아니다'라고 말해 주므로 주제어로 다시 세지 않는다.
+    맵·vocab 이 없으면 ({}, set()) — :Keyword 판정으로 폴백."""
+    try:
+        m = json.loads(VOCAB_MAP.read_text(encoding="utf-8"))
+        sys.path.insert(0, str(SKILL_DIR / "src"))
+        import vocab
+        terms = vocab.match_terms(utterance)
+    except Exception:
+        return {}, set()
+    signals, handled = {}, set()
+    for t in terms:
+        e = m.get(t["concept"])
+        if not e or e["n"] < VOCAB_MIN_OBS:
+            continue
+        handled |= {l.lower() for l in t["labels"]}
+        top = e["candidates"][0]
+        if top["share"] > VOCAB_DOMINANT_SHARE:   # 과반
+            cur = signals.get(top["project"])
+            if not cur or top["share"] > cur["share"]:
+                signals[top["project"]] = {"label": t["hits"][0], "concept": t["concept"],
+                                           "share": top["share"]}
+    return signals, handled
+
+
 def do_locate(utterance, use_similar=False):
     """발화가 지칭하는 프로젝트 디렉토리 추론 (intent 무관, 부작용 없음).
 
-    키워드 두 종류 (projects.yaml):
-      explicit = 프로젝트 id + aliases — 직접 지칭. 학습 분포와 무관하게 확정.
-      tacit    = keywords (+ 미등록 서브모듈 이름은 explicit) — 주제 암시. keyword-map 학습 분포로 판정.
+    어휘 유형과 우선순위 (UD-0006): :ProjectName > :WorkTerm > :Keyword > :Directive
+      :ProjectName = 프로젝트 id + aliases (+ 미등록 서브모듈 이름) — 직접 지칭, 확정.
+      :WorkTerm    = 작업어휘(vocab_terms.ttl) — 학습한 어휘→레포 빈도(vocab-term-map)로 추정.
+                     확정 지칭어로는 쓰지 않는다(C1: 'repository' 서브모듈명 오인 방지).
+      :Keyword     = projects.yaml keywords — 주제 암시, keyword-map 학습 분포로 추정.
+      :Directive   = 해줘·하자·어때 — 레포 신호 없음.
     status:
-      clear    — explicit 이 한 프로젝트를 가리킴
-      likely   — tacit 만 있고 한쪽으로 모이거나(exclusive) 관측 부족(sparse) → 추정, 확인 후 진행
-      clarify  — explicit 끼리 충돌 / tacit 이 여러 프로젝트로 갈라짐(ambiguous) / tacit 추정끼리 충돌
-      none     — 지칭 키워드 없음
+      clear    — :ProjectName 이 한 프로젝트를 가리킴
+      likely   — 추정 신호가 한쪽으로 모임 → 확인 후 진행
+      clarify  — :ProjectName 끼리 충돌 / 추정 신호가 갈라짐. :WorkTerm 이 :Keyword 와 다른 레포를
+                 가리키면 :WorkTerm 쪽을 추천(recommended_by: 작업어휘)
+      none     — 지칭 신호 없음
     """
     projects, anchors = load_projects(), load_anchors()
     try:
@@ -549,15 +582,22 @@ def do_locate(utterance, use_similar=False):
             owner[base] = label
             explicit.add(base)
 
-    # C1 (UD-0004): 작업어휘 label("repository"·"워크플로우" 등)은 프로젝트 지칭어가 아니다.
-    # 서브모듈 디렉토리명·alias 가 우연히 같아도 explicit 으로 확정하지 않는다.
-    # 프로젝트 id 자체가 작업어휘와 같을 때만 예외로 남긴다.
+    # :WorkTerm 신호 — 학습한 빈도가 충분한 작업어휘는 여기서 판정하고, 같은 label 을
+    # :Keyword 로 두 번 세지 않는다. 빈도가 없거나 부족하면 :Keyword 판정으로 폴백한다.
+    work, work_labels = _workterm_signals(utterance)
     vocab_words = _vocab_words()
-    hits = [kw for kw in owner if _kw_in(kw, utt)
-            and not (kw.lower() in vocab_words and kw not in projects)]
+
+    def _drop(kw):
+        k = kw.lower()
+        if k not in vocab_words or kw in projects:   # 프로젝트 id 자체는 예외
+            return False
+        # C1: 작업어휘는 확정 지칭어(alias·서브모듈명)가 아니다. 주제어로는 폴백 허용.
+        return kw in explicit or k in work_labels
+
+    hits = [kw for kw in owner if _kw_in(kw, utt) and not _drop(kw)]
     # 더 긴 키워드에 포함된 짧은 키워드는 제외 ("콘텐츠 허브" 안의 "콘텐츠")
     hits = [k for k in hits if not any(k != o and k.lower() in o.lower() for o in hits)]
-    if not hits:
+    if not hits and not work:
         return {"status": "none", "keywords": [], "candidates": []}
 
     sure, likely, unsure = {}, {}, {}
@@ -575,17 +615,28 @@ def do_locate(utterance, use_similar=False):
         else:   # sparse / 미학습 → 등록 소유자 추정
             likely.setdefault(owner[kw], kw)
 
-    def cand(p, kw, share=None):
+    def cand(p, kw, share=None, kind=None):
         return {"project": p, "keyword": kw, "share": share,
-                "kind": "explicit" if kw in explicit else "tacit",
+                "kind": kind or ("explicit" if kw in explicit else "tacit"),
                 "path": _resolve_target(p, projects, anchors)}
 
+    keywords = hits + [w["label"] for w in work.values()]
     if len(sure) == 1:
         (p, kw), = sure.items()
-        return {"status": "clear", "keywords": hits, "candidates": [cand(p, kw)]}
+        return {"status": "clear", "keywords": keywords, "candidates": [cand(p, kw)]}
     if sure:   # explicit 끼리 충돌 (두 프로젝트를 모두 부름)
-        return {"status": "clarify", "keywords": hits,
+        return {"status": "clarify", "keywords": keywords,
                 "candidates": [cand(p, kw) for p, kw in sure.items()]}
+    if work:   # :WorkTerm > :Keyword
+        wc = [cand(p, w["label"], w["share"], "workterm")
+              for p, w in sorted(work.items(), key=lambda x: -x[1]["share"])]
+        others = [p for p in list(likely) + list(unsure) if p not in work]
+        if len(work) == 1 and not others:
+            return {"status": "likely", "keywords": keywords, "candidates": wc}
+        # 작업어휘끼리 갈라지거나 주제어가 다른 레포를 가리킴 → 되묻되 작업어휘 쪽을 추천
+        kc = [cand(p, (likely.get(p) or unsure[p][0])) for p in dict.fromkeys(others)]
+        return {"status": "clarify", "keywords": keywords, "candidates": wc + kc,
+                "recommended": wc[0]["project"], "recommended_by": "작업어휘"}
     if len(likely) == 1 and not unsure:
         (p, kw), = likely.items()
         return {"status": "likely", "keywords": hits, "candidates": [cand(p, kw)]}
@@ -679,7 +730,8 @@ VOCAB_MAP = SKILL_DIR.parent / "uug-pattern-analytics" / "workspace" / "vocab-te
 # 일반 어휘(실행·기록·레포)는 최대 점유 29~38%로 분산 → 집중 어휘에서만 발동.
 # LOO 평가는 발동 4건(추천 정답 2, 직전 레포 정답 1)으로 표본 부족 — 임계값도 같은 데이터를 보고
 # 정한 초기값이다. 그래서 자동 확정이 아니라 clarify 추천으로만 쓴다(UD-0001).
-VOCAB_DOMINANT_SHARE = 0.5   # 어휘 → 레포 집중도 (이 이상이어야 '그 레포의 업무')
+VOCAB_DOMINANT_SHARE = 0.5   # 어휘 → 레포 집중도. 이 값을 **넘어야**(과반) '그 레포의 업무'.
+# 경계 50% 는 제외: LOO 실측에서 정확히 50% 인 '릴리즈'가 신호 8건 모두 오답(2026-11-25).
 VOCAB_MIN_OBS = 10           # 어휘 관측 수
 VOCAB_LOW_RATE = 0.02        # 직전 레포 발화 중 이 어휘 비율이 이 미만이면 '적용 빈도 낮음'
 VOCAB_PREV_MIN_N = 20        # 직전 레포 관측이 이 미만이면 비율을 믿지 않는다(판정 보류)
@@ -709,8 +761,8 @@ def vocab_redirect(utterance, prev):
         if not e or e["n"] < VOCAB_MIN_OBS:
             continue
         top = e["candidates"][0]
-        if top["share"] < VOCAB_DOMINANT_SHARE:
-            continue   # 여러 레포에 퍼진 일반 어휘 — 어느 레포의 업무라고 말할 수 없다
+        if top["share"] <= VOCAB_DOMINANT_SHARE:
+            continue   # 과반이 아님 — 여러 레포에 퍼진 일반 어휘 — 어느 레포의 업무라고 말할 수 없다
         rate = next((c["count"] for c in e["candidates"] if c["project"] == prev), 0) / pn[prev]
         if rate >= VOCAB_LOW_RATE or top["project"] == prev:
             return {"c3": True, "project": None, "term": t["concept"], "prev_rate": round(rate, 3)}
@@ -905,11 +957,14 @@ def cmd_locate(args):
     if r["status"] == "none":
         print("[locate] 지칭 키워드 없음")
         return 0
-    head = {"clear": "확정 (explicit)", "likely": f"추정 (tacit: {', '.join(r['keywords'])}) — 확인 후 진행"}.get(
+    kind = (r["candidates"][0].get("kind") if r["candidates"] else None)
+    basis = "작업어휘" if kind == "workterm" else "tacit"
+    head = {"clear": "확정 (explicit)", "likely": f"추정 ({basis}: {', '.join(r['keywords'])}) — 확인 후 진행"}.get(
         r["status"], f"모호 — 확인 필요 ({', '.join(r['keywords'])})")
     print(f"[locate] {head}")
     for c in r["candidates"]:
-        share = f" 키워드 {c['share']:.0%}" if c.get("share") else ""
+        src = "작업어휘" if c.get("kind") == "workterm" else "키워드"
+        share = f" {src} {c['share']:.0%}" if c.get("share") else ""
         sim = f" 유사발화 {c['similar']:.0%}(n={c['neighbors']})" if "similar" in c else ""
         star = " ★추천" if r.get("recommended") == c["project"] else ""
         print(f"  - {c['project']}{share}{sim}{star}  {c['path'] or '(경로 미해소)'}")
