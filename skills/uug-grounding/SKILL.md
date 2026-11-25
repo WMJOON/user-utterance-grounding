@@ -57,6 +57,8 @@ explicit(프로젝트 id·`aliases`) 은 대상 디렉토리 안내, tacit(`keyw
 | `instances/user_intents.ttl` | 싱크됨 | **★ intent SoT (엄밀 TTL)** — intent + slot_specs + trigger_keywords + `scope`(후보 공간 위계: meta/repository/workflow/workflow.executionRail, UD-0001. 현재는 lookup 노출만 — 후보 바인딩 정책은 후속) |
 | `references/schemas/nlu_intent.yaml` | 싱크됨 | LinkML schema (OWL/SHACL/JSON-schema 생성용) |
 | `taxonomy/*.ttl` | 싱크됨 | SKOS verb/target 위계 |
+| `taxonomy/vocab_terms.ttl` | 싱크됨 | 작업어휘·지시문 SKOS 스킴(UD-0004). 작업어휘는 4축 binary facet(`isWorkflow`/`isRepository`/`isExecution`/`isArtifact`, xsd:boolean 정확히 1개), 지시문은 `isCommand`. 검증 `references/shapes/vocab_shapes.ttl` |
+| `src/vocab.py` | 싱크됨 | 어휘 소비 API — `match_terms`(C1) / `facet_vector` / `is_command`(C2) / `intent_compat`(동점 호환 점수) |
 | `src/lookup.py` | 싱크됨 | RDFLib 소비 API (`list_intents`/`lookup_intent`/`match_intent`) |
 | `tools/build.sh` | 싱크됨 | LinkML → OWL/SHACL/JSON-schema (dev 전용, linkml 필요) |
 | `projects.yaml` | 싱크됨 | 프로젝트 위치 레지스트리 — `{project: {anchor, rel, keywords, tags, intent_registry?}}` (절대경로 없음). `target_project` 슬롯 해석 소스 + (선택) 도메인 레지스트리 경로 |
@@ -69,8 +71,14 @@ explicit(프로젝트 id·`aliases`) 은 대상 디렉토리 안내, tacit(`keyw
 
 - **머신 이식**: 경로를 `{anchor, rel}` 로 저장(싱크), 머신마다 다른 절대경로는 machine.yaml(로컬). `$CLAUDE_PROJECT_DIR` 이식 원칙과 동일.
 - **0-config 부트스트랩**: machine.yaml 없으면 `.obsidian` 마커를 위로 탐지해 `vault` 앵커 자동 생성. vault 밖 레포만 앵커 수동 추가.
-- **grounding (slot 기반, Lv10)**: 발화 → `match_intent`(TTL trigger_keywords) 로 intent 분류 → slot fill(`ask`=발화추출 / `session_context`=추론 / `default`) → 필수 슬롯 미충족 시 reprompt(HITL). `target_project` 슬롯의 `session_context` 가 "project-name 미명시 → 추론"의 핵심(MVP: projects.yaml 키워드 매칭; `last_project` 세션추적은 후속). Lv30 LLM fallback 후속.
+- **grounding (slot 기반, Lv10)**: 발화 → `match_intent`(TTL trigger_keywords) 로 intent 분류 → slot fill(`ask`=발화추출 / `session_context`=추론 / `default`) → 필수 슬롯 미충족 시 reprompt(HITL). `target_project` 슬롯의 `session_context` 가 "project-name 미명시 → 추론"의 핵심(projects.yaml 키워드 매칭 → 없으면 `.session.json` 의 `last_project` 폴백). Lv30 LLM fallback 후속.
 - **ambiguous fallback (top-2 margin)**: `match_intent` 가 top-1·top-2 점수차(`margin`, 후보 1개면 None)를 산출하고, `margin < 임계` 면 commit 대신 `ambiguous`(HITL, 임계 창 내 후보 나열, rc 2). 임계는 스코프별 env 로 튜닝 — user `UG_AMBIGUOUS_MARGIN_USER`(기본 1: 동점만 HITL), 도메인 `UG_AMBIGUOUS_MARGIN_DOMAIN`(기본 0: 동점도 top-1 commit, §11.1 first-match-wins 비회귀). 동점 commit 은 결과의 `committed_low_margin`(dispatch JSON 은 `uug_margin`/`uug_committed_low_margin`)으로 관측 → uug-pattern-analytics 임계 튜닝 재료. 실측(fixture 50발화)상 오답은 margin 0 에 집중, margin ≥ 1 은 전건 정답이라 기본 임계 상향은 무익 — 키워드 가중 스코어링으로 margin 해상도 확보가 후속.
+
+- **Binary Condition (UD-0004)**: 후보를 지우지 않고 순서·추천만 바꾼다(UD-0001 가중 원칙).
+  - **C1 작업어휘인가** — 작업어휘 label("repository"·"워크플로우" 등)은 `locate` 에서 프로젝트 지칭어로 쓰지 않는다. 서브모듈 디렉토리명·alias 가 같아도 explicit 확정 금지(프로젝트 id 자체는 예외).
+  - **C2 명령형인가** — 발화 끝 지시문(해줘·하자 / 어때·할까·?)으로 판정. 지시문은 trigger_keywords 에 넣지 않는다.
+  - **동점 해소** — `match_intent` 가 margin 0 일 때만 facet·C2 호환 점수로 해소(`tiebreak`). facet 근거는 그 intent 가 이미 키워드로 센 어휘를 뺀 나머지에서만 가져온다(순환 근거 차단). 풀리면 `ambiguous` 해제, `margin` 은 관측값 그대로.
+  - **C3 직전 레포에서 그 업무를 하는가** — `infer` 가 `uug-pattern-analytics/workspace/vocab-term-map.json`(`vocab_map.py` 생성)을 읽어, 집중 어휘(점유 ≥ 50%, 관측 ≥ 10)가 직전 레포에서 드물면(적용 빈도 < 2%, 직전 레포 관측 ≥ 20) 그 어휘를 주로 쓰는 레포를 `recommended_by: 작업어휘 빈도` 로 추천하고 clarify 한다. 맵은 작업 신호(`target_via` 에 work)로 타깃이 정해진 발화만 센다 — 발화 키워드 레이블은 projects.yaml 키워드 순환이라 제외. 실측(2026-11-25 LOO): 발동 4건 중 추천 정답 2, 직전 레포 정답 1 — 표본 부족, 임계값은 같은 데이터로 정한 초기값.
 
 ## 상태
 
@@ -81,7 +89,8 @@ MVP — grounding + 인덱스/리졸버/doctor 동작. user-memory(UC/UP/UF) 영
 - Codex 사용자 기록의 `response_item/message(role=user)`와 `item_completed/UserMessage`를 모두 읽고, 같은 입력의 이중 기록은 한 턴으로 합친다. 기존 event ID는 증분 태깅 참조로 보존한다.
 - 키워드 없는 명시적 짧은 제어 발화(이어서·계속·그만 등)는 transcript의 직전 타깃에 연결한다. 활성 컨텍스트가 없으면 확정하지 않는다. 이는 대상 안내이며 pause/cancel 실행 승인이 아니다.
 - `hooks/context_contract.py`가 대상과 후속 조회 절차를 생성한다. 새 작업·대상 전환이면 AGENTS/CLAUDE 및 대상 work-memory를 읽고 ID·경로·적용 제약 또는 기록 없음/조회 실패를 보고한다. 같은 작업에서 이미 읽은 근거는 재사용한다.
-- 같은 디렉토리도 계약을 전달한다. clarify는 대상 확인만 전달하고, likely는 확인 후 진행한다. 훅은 작업 실행이나 기록 쓰기를 하지 않는다.
+- **같은 대상 생략 (UD-0005, 2026-11-25 — 구 "같은 디렉토리도 계약을 전달" 대체)**: `ug.py infer` 가 판정 뒤 `apply_same_target_policy` 로, 대상이 직전 작업 레포(prev)와 같으면 주입을 생략한다(`emit_reason: same_as_prev`). 생략 = clear·likely·inferred 에서 대상==prev, clarify 에서 추천이 연속성. 유지 = prev 없음 · 대상 전환 · clarify 추천이 연속성 아님(작업어휘 빈도·유사 발화) 또는 추천 없음 · 그 transcript 에서 그 대상 첫 주입 · 마지막 주입 뒤 컨텍스트 압축(Codex `compacted` 실기록 확인, Claude `compact_boundary`/`isCompactSummary` 는 알려진 형식). 주입 이력은 transcript 별로 `~/.local/share/uug/inject-state.json`(`UUG_INJECT_STATE`, 원문 없음). 실측 재생: 넛지 1482 → 734.
+- clarify는 대상 확인만 전달하고(계약 이력에 넣지 않음), likely는 확인 후 진행한다. 훅은 작업 실행이나 기록 쓰기를 하지 않는다.
 - 검증: `python3 -m pytest skills/uug-grounding/tests/test_codex_context.py -q` (repository 루트). 이 테스트는 transcript→추론→전달 계약을 검증하며 실제 모델의 행동 준수는 별도 대화 관측이 필요하다.
 
 ## Antigravity 연결

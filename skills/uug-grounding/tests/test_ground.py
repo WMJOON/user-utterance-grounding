@@ -16,7 +16,7 @@ def _ground(utt, session=None, env_extra=None):
     """session: None=빈 세션(격리), dict=세션 상태 주입. env_extra: 임계 override 등."""
     with tempfile.TemporaryDirectory() as td:
         fixture = Path(td)
-        for name in ("scripts", "src", "instances"):
+        for name in ("scripts", "src", "instances", "taxonomy"):
             shutil.copytree(SKILL / name, fixture / name, ignore=shutil.ignore_patterns("__pycache__"))
         (fixture / "projects.yaml").write_text(
             "sample-tools: {anchor: test, rel: ., keywords: [스킬]}\n"

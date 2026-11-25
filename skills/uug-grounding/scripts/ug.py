@@ -239,7 +239,10 @@ def _do_ground(utterance):
         return {"status": "no-intent"}
     margin = m["margin"]
     threshold = _margin_threshold(bool(intent.get("source_project")))
-    if margin is not None and margin < threshold:
+    # 작업어휘·지시문 호환 점수로 동점이 풀렸으면(UD-0004) 그 동점은 한 단계 벌어진 것으로 본다.
+    tb = m.get("tiebreak") or {}
+    effective = 1 if (margin == 0 and tb.get("resolved")) else margin
+    if effective is not None and effective < threshold:
         # 후보는 임계 창 안(top 점수와의 차 < 임계)만 노출 — 기본 임계 1에선 동점만.
         return {"status": "ambiguous", "margin": margin, "threshold": threshold,
                 "candidates": [(iid, sc, h) for iid, sc, h in m["candidates"]
@@ -506,6 +509,16 @@ def _umbrella_subs(projects, anchors):
     return out
 
 
+def _vocab_words():
+    """작업어휘 label 집합. rdflib·vocab TTL 이 없으면 빈 집합(기존 동작)."""
+    sys.path.insert(0, str(SKILL_DIR / "src"))
+    try:
+        import vocab
+        return vocab.term_labels()
+    except Exception:
+        return set()
+
+
 def do_locate(utterance, use_similar=False):
     """발화가 지칭하는 프로젝트 디렉토리 추론 (intent 무관, 부작용 없음).
 
@@ -536,7 +549,12 @@ def do_locate(utterance, use_similar=False):
             owner[base] = label
             explicit.add(base)
 
-    hits = [kw for kw in owner if _kw_in(kw, utt)]
+    # C1 (UD-0004): 작업어휘 label("repository"·"워크플로우" 등)은 프로젝트 지칭어가 아니다.
+    # 서브모듈 디렉토리명·alias 가 우연히 같아도 explicit 으로 확정하지 않는다.
+    # 프로젝트 id 자체가 작업어휘와 같을 때만 예외로 남긴다.
+    vocab_words = _vocab_words()
+    hits = [kw for kw in owner if _kw_in(kw, utt)
+            and not (kw.lower() in vocab_words and kw not in projects)]
     # 더 긴 키워드에 포함된 짧은 키워드는 제외 ("콘텐츠 허브" 안의 "콘텐츠")
     hits = [k for k in hits if not any(k != o and k.lower() in o.lower() for o in hits)]
     if not hits:
@@ -655,6 +673,52 @@ def prev_target(transcript, utterance="", lookback=5):
     return None
 
 
+VOCAB_MAP = SKILL_DIR.parent / "uug-pattern-analytics" / "workspace" / "vocab-term-map.json"
+# C3 (UD-0004): 작업어휘가 직전 작업 레포에서 드물게 쓰이면 그 어휘를 주로 쓰는 레포로 추천을 돌린다.
+# 실측(2026-11-25, 작업 신호로 타깃이 정해진 발화 677건): '리서치'는 25건 중 56%가 한 레포에 집중,
+# 일반 어휘(실행·기록·레포)는 최대 점유 29~38%로 분산 → 집중 어휘에서만 발동.
+# LOO 평가는 발동 4건(추천 정답 2, 직전 레포 정답 1)으로 표본 부족 — 임계값도 같은 데이터를 보고
+# 정한 초기값이다. 그래서 자동 확정이 아니라 clarify 추천으로만 쓴다(UD-0001).
+VOCAB_DOMINANT_SHARE = 0.5   # 어휘 → 레포 집중도 (이 이상이어야 '그 레포의 업무')
+VOCAB_MIN_OBS = 10           # 어휘 관측 수
+VOCAB_LOW_RATE = 0.02        # 직전 레포 발화 중 이 어휘 비율이 이 미만이면 '적용 빈도 낮음'
+VOCAB_PREV_MIN_N = 20        # 직전 레포 관측이 이 미만이면 비율을 믿지 않는다(판정 보류)
+
+
+def vocab_redirect(utterance, prev):
+    """C3 — 발화의 작업어휘가 직전 레포(prev)에 적용되는가.
+    반환 {"c3": True|False|None, "project": 추천 레포|None, "term", "share", "prev_rate"}.
+    c3 None = 판정 불가(어휘 없음·맵 없음·관측 부족). project 는 c3 False 이고 다른 레포가
+    그 어휘를 주로 쓸 때만 채운다."""
+    none = {"c3": None, "project": None}
+    if not prev:
+        return none
+    try:
+        m = json.loads(VOCAB_MAP.read_text(encoding="utf-8"))
+        sys.path.insert(0, str(SKILL_DIR / "src"))
+        import vocab
+        terms = vocab.match_terms(utterance)
+    except Exception:
+        return none
+    pn = (m.get("_meta") or {}).get("project_n", {})
+    if pn.get(prev, 0) < VOCAB_PREV_MIN_N:
+        return none
+    best = none
+    for t in terms:
+        e = m.get(t["concept"])
+        if not e or e["n"] < VOCAB_MIN_OBS:
+            continue
+        top = e["candidates"][0]
+        if top["share"] < VOCAB_DOMINANT_SHARE:
+            continue   # 여러 레포에 퍼진 일반 어휘 — 어느 레포의 업무라고 말할 수 없다
+        rate = next((c["count"] for c in e["candidates"] if c["project"] == prev), 0) / pn[prev]
+        if rate >= VOCAB_LOW_RATE or top["project"] == prev:
+            return {"c3": True, "project": None, "term": t["concept"], "prev_rate": round(rate, 3)}
+        best = {"c3": False, "project": top["project"], "term": t["concept"],
+                "share": top["share"], "prev_rate": round(rate, 3)}
+    return best
+
+
 # eval_targets.py LOO 실측(정답 355건): 직전 타깃 79%(커버 90%), 직전→유사발화 폴백 78%(커버 ~100%),
 # 유사발화 단독 51%, 리랭커 50%. → 연속성 우선, 유사 발화는 폴백·보강.
 def do_infer(utterance, transcript=None):
@@ -682,14 +746,26 @@ def do_infer(utterance, transcript=None):
     if loc["status"] == "likely":
         p = loc["candidates"][0]["project"]
         if prev and prev != p:   # 주제 암시와 직전 작업이 어긋남 → 되묻기
-            out.update(status="clarify", recommended=prev, recommended_by="연속성",
-                       candidates=[cand(prev, "직전 작업")] + loc["candidates"])
+            vr = vocab_redirect(utterance, prev)
+            out["vocab"] = vr
+            if vr["c3"] is False and vr["project"] == p:
+                # 이 업무는 직전 레포에서 드물고 p 에서 주로 한다 → 연속성보다 주제 쪽을 추천
+                out.update(status="clarify", recommended=p, recommended_by="작업어휘 빈도",
+                           candidates=loc["candidates"] + [cand(prev, "직전 작업")])
+            else:
+                out.update(status="clarify", recommended=prev, recommended_by="연속성",
+                           candidates=[cand(prev, "직전 작업")] + loc["candidates"])
         out["emit"] = True
         return out
 
     if loc["status"] == "clarify":
         names = [c["project"] for c in loc["candidates"]]
-        if prev and prev in names:   # 모호 키워드 발화에서 직전 타깃 적중률 92%
+        vr = vocab_redirect(utterance, prev)
+        out["vocab"] = vr
+        if vr["c3"] is False and vr["project"] in names:
+            out["recommended"], out["recommended_by"] = vr["project"], "작업어휘 빈도"
+            out["candidates"] = sorted(loc["candidates"], key=lambda c: c["project"] != vr["project"])
+        elif prev and prev in names:   # 모호 키워드 발화에서 직전 타깃 적중률 92%
             out["recommended"], out["recommended_by"] = prev, "연속성"
             out["candidates"] = sorted(loc["candidates"], key=lambda c: c["project"] != prev)
         else:
@@ -699,7 +775,15 @@ def do_infer(utterance, transcript=None):
         out["emit"] = True
         return out
 
-    # status none — 키워드 없음: 연속성 → 유사 발화 폴백
+    # status none — 키워드 없음: 작업어휘 빈도(C3) → 연속성 → 유사 발화 폴백
+    vr = vocab_redirect(utterance, prev)
+    out["vocab"] = vr
+    if vr["c3"] is False and vr["project"]:
+        # 직전 레포에서 드문 업무 → 그 업무를 주로 하는 레포를 추천하고 되묻는다 (자동 확정 아님)
+        out.update(status="clarify", recommended=vr["project"], recommended_by="작업어휘 빈도",
+                   candidates=[cand(vr["project"], f"작업어휘 {vr['term']}"), cand(prev, "직전 작업")],
+                   emit=True)
+        return out
     rank = _similar(utterance)
     top = rank[0] if rank else None
     knn = top["project"] if top else None
@@ -734,15 +818,79 @@ def log_infer(r, transcript, session_dir):
                "status": r["status"], "emit": r.get("emit"), "target": c.get("project"),
                "why": c.get("keyword"), "prev": r.get("prev"), "knn": r.get("knn"),
                "knn_weight": r.get("knn_weight"), "recommended": r.get("recommended"),
-               "keywords": r.get("keywords"), "emit_reason": r.get("emit_reason")}
+               "keywords": r.get("keywords"), "emit_reason": r.get("emit_reason"),
+               "vocab_c3": (r.get("vocab") or {}).get("c3"),
+               "vocab_term": (r.get("vocab") or {}).get("term")}
         with LOCATE_LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception:
         pass
 
 
+INJECT_STATE = Path(os.environ.get("UUG_INJECT_STATE",
+                                   Path.home() / ".local/share/uug/inject-state.json"))
+INJECT_STATE_KEEP = 200   # 최근 transcript 만 보관 (머신 로컬 파생 상태)
+_COMPACT = re.compile(r'"subtype":\s*"compact_boundary"|"isCompactSummary":\s*true|"type":\s*"compacted"')
+
+
+def _compactions(transcript):
+    """transcript 의 컨텍스트 압축 횟수. Codex 'compacted' 는 실기록으로 확인,
+    Claude 'compact_boundary'/'isCompactSummary' 는 알려진 형식(로컬 실기록 없음)."""
+    try:
+        with open(transcript, encoding="utf-8", errors="replace") as f:
+            return sum(1 for line in f if _COMPACT.search(line))
+    except OSError:
+        return 0
+
+
+def _target_of(r):
+    c = (r.get("candidates") or [{}])[0]
+    return c.get("project")
+
+
+def apply_same_target_policy(r, transcript):
+    """UD-0005 — 대상이 직전 작업 레포와 같으면 주입을 생략한다 (r 을 제자리 수정).
+
+    생략: clear·likely·inferred 에서 대상==prev / clarify 에서 추천이 연속성(prev).
+    유지: prev 없음, 대상≠prev, clarify 추천이 연속성 아님(작업어휘 빈도·유사 발화)·추천 없음,
+          이 transcript 에서 그 대상에 아직 주입 안 함, 마지막 주입 뒤 압축 발생.
+    주입 이력은 transcript 별로 INJECT_STATE 에 남긴다 (원문 없음)."""
+    if not r.get("emit") or not transcript:
+        return r
+    target, prev = _target_of(r), r.get("prev")
+    status = r.get("status")
+    if status == "clarify":
+        same = bool(prev) and r.get("recommended") == prev and r.get("recommended_by") == "연속성"
+        target = prev if same else target
+    else:
+        same = bool(prev) and target == prev
+    try:
+        state = json.loads(INJECT_STATE.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        state = {}
+    entry = state.get(transcript) or {"injected": {}}
+    comp = _compactions(transcript)
+    if same and target in entry["injected"] and entry["injected"][target] >= comp:
+        r["emit"], r["emit_reason"] = False, "same_as_prev"
+        return r
+    # 실제로 주입하는 경우 — 계약 전달 이력 갱신 (clarify 는 대상 확인만이라 이력에 넣지 않는다)
+    if status != "clarify" and target:
+        entry["injected"][target] = comp
+        state.pop(transcript, None)
+        state[transcript] = entry
+        while len(state) > INJECT_STATE_KEEP:
+            state.pop(next(iter(state)))
+        try:
+            INJECT_STATE.parent.mkdir(parents=True, exist_ok=True)
+            INJECT_STATE.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+    return r
+
+
 def cmd_infer(args):
     r = do_infer(args.utterance, args.transcript)
+    apply_same_target_policy(r, args.transcript)
     if args.log:
         log_infer(r, args.transcript, args.session_dir)
     print(json.dumps(r, ensure_ascii=False))

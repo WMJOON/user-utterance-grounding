@@ -1,4 +1,4 @@
-# user-utterance-grounding (UUG) v0.4.0
+# user-utterance-grounding (UUG) v0.5.0
 
 UUG는 **사용자 발화·의도 중심의 크로스-프로젝트 grounding 도구**다 — [MSO](https://github.com/WMJOON/multi-swarm-orchestrator)의 user-side 대응.
 
@@ -36,12 +36,13 @@ flowchart TD
     H -- "no · --prompt-hook (legacy)" --> G["uug-grounding<br/>값전달 context 주입"]
 
     LH --> KW{"발화 키워드"}
-    KW -- "explicit (id·aliases)" --> CL["clear<br/>대상 디렉토리 안내"]
+    KW -- "explicit (id·aliases)<br/>작업어휘 label 제외" --> CL["clear<br/>대상 디렉토리 안내"]
     KW -- "tacit, 한쪽으로 모임" --> LK["likely<br/>추정 + 확인 요청"]
     KW -- "tacit, 갈라짐" --> CF["clarify<br/>추측 금지, 연속성 기준 추천"]
-    KW -- "없음" --> CT["직전 턴 작업 경로(연속성)<br/>→ 유사 발화 폴백"]
+    KW -- "없음" --> CT["작업어휘 빈도(C3)<br/>→ 직전 턴 작업 경로(연속성)<br/>→ 유사 발화 폴백"]
     CT -- "일치 / 명시적 연속 지시" --> IN["inferred 힌트"]
     CT -- "불일치" --> SL["침묵 + locate-log 기록"]
+    CL & LK & IN -. "대상 == 직전 레포<br/>(이미 주입함)" .-> SK["주입 생략<br/>same_as_prev"]
 
     C -- "CLI: ug ground / ug dispatch" --> G
     C -- "CLI: ug locate / ug infer" --> LH
@@ -119,6 +120,7 @@ ug dispatch "ticket-217 재실행"
 트랜스크립트(Claude Code·Codex·Antigravity)
   → tag_targets.py   발화마다 utterance_target(키워드) / work_target(그 턴의 도구 경로) — 원문 미저장
   → keyword_map.py   키워드 → 실제 작업 프로젝트 분포 (explicit / exclusive / ambiguous / sparse)
+  → vocab_map.py     작업어휘(SKOS) → 레포 적용 빈도 (v0.5.0)
   → similar.py       타깃 확정 발화를 zvec 에 색인 (bge-m3)
   → ug infer         매 프롬프트: 키워드 + 연속성 + 유사 발화 → emit 판정
 ```
@@ -131,7 +133,30 @@ ug dispatch "ticket-217 재실행"
 | 키워드 없음 | `inferred` — 직전 턴 타깃 → 유사 발화 폴백 | 직전 작업·유사 발화 일치 또는 명시적 연속 지시 |
 
 - **연속성이 주 신호다.** 작성자 환경 실측(345건): 직전 턴 타깃 78%, 유사 발화 kNN 49%, cross-encoder 리랭커 50%(채택 안 함). 자세한 수치는 [changelog](docs/changelog.md).
-- 같은 디렉토리에도 작업 시작 계약을 전달한다. 새 작업·대상 전환이면 해당 저장소의 지침과 관련 work-memory를 읽고 참조 ID·경로·적용 제약을 보고한다. 같은 작업에서 이미 조회했다면 근거를 재사용한다. 모든 판정은 넛지 여부와 무관하게 `~/.local/share/uug/locate-log.jsonl` 에 **원문 없이** 남아 임계 튜닝 재료가 된다.
+- **같은 대상이면 주입을 생략한다 (v0.5.0).** 대상이 세션의 직전 작업 레포와 같고 이 대화에서 이미 안내했다면 다시 주입하지 않는다(`emit_reason: same_as_prev`). 세션 첫 안내, 대상 전환, 연속성이 아닌 추천, 컨텍스트 압축 이후에는 다시 안내한다. 새 작업·대상 전환이면 해당 저장소의 지침과 관련 work-memory를 읽고 참조 ID·경로·적용 제약을 보고한다. 모든 판정은 넛지 여부와 무관하게 `~/.local/share/uug/locate-log.jsonl` 에 **원문 없이** 남아 임계 튜닝 재료가 된다.
+
+#### 작업어휘와 Binary Condition (v0.5.0)
+
+자주 쓰는 작업 어휘(리서치·정리·기록·릴리즈 …)와 지시문(해줘·하자·어때 …)을 intent 안의 문자열이 아니라 **SKOS 개념**으로 관리한다(`uug-grounding/taxonomy/vocab_terms.ttl`). 같은 말이 여러 뜻으로 쓰이면 개념을 나눈다 — 예: "bot 다 **정리**하자"(치우기)와 "개념을 skos**로 정리**해줘"(구조화).
+
+작업어휘마다 네 축을 참/거짓 하나씩 갖는다(SHACL 로 강제). 타입 멤버십은 open world 라 "아니다"를 표현하지 못해 쓰지 않는다.
+
+| 축 | 묻는 것 |
+|----|--------|
+| `isWorkflow` | 여러 단계를 밟는 절차인가 |
+| `isRepository` | 저장소·디렉토리 단위 작업인가 |
+| `isExecution` | 실행 중 run/rail 제어인가 |
+| `isArtifact` | 산출물(문서·기록)이 남는가 |
+
+이 어휘로 세 조건을 판정한다. 후보를 지우지 않고 순서·추천만 바꾼다.
+
+| 조건 | 질문 | 쓰임 |
+|------|------|------|
+| C1 | 작업어휘인가 | "repository"·"워크플로우" 같은 말을 프로젝트 이름(서브모듈 디렉토리명 등)으로 오인하지 않는다 |
+| C2 | 명령인가 | 발화 끝 지시문으로 판정. intent 키워드가 동점일 때만 facet 과 함께 순서를 정한다 |
+| C3 | 직전 레포에서 하던 업무인가 | 그 어휘가 직전 레포에서 드물고(적용 빈도 < 2%) 다른 레포에 몰려 있으면(점유 ≥ 50%) 그 레포를 추천하고 되묻는다 |
+
+C3 의 빈도는 `vocab_map.py` 가 과거 발화에서 학습한다. 작성자 환경 실측: '리서치'는 작업 신호로 확정된 25건 중 56%가 한 레포에 몰렸고, 실행·기록 같은 일반 어휘는 최대 점유 29~38%로 흩어졌다. LOO 평가에서 C3 가 발동한 4건 중 추천 정답 2건, 직전 레포 정답 1건 — 표본이 작고 임계값도 같은 데이터로 정한 초기값이라 **자동 확정에 쓰지 않는다**.
 
 ---
 
@@ -140,9 +165,9 @@ ug dispatch "ticket-217 재실행"
 | 스킬 | 역할 | 핵심 스크립트 | 상태 |
 |------|------|-----------|------|
 | `uug-orchestration` | 라우터/진입점 + 정책 | — | ✅ |
-| `uug-grounding` | 발화→{target_project, intent, slots} · intent TTL lookup · 위치 레지스트리(resolve/doctor) · `ug dispatch` · `ug locate`/`ug infer` · UserPromptSubmit 값전달 | `scripts/ug.py`, `src/lookup.py`, `hooks/ug-locate-hook.py` | ✅ |
+| `uug-grounding` | 발화→{target_project, intent, slots} · intent TTL lookup · 작업어휘·지시문 SKOS · 위치 레지스트리(resolve/doctor) · `ug dispatch` · `ug locate`/`ug infer` · UserPromptSubmit 값전달 | `scripts/ug.py`, `src/lookup.py`, `src/vocab.py`, `hooks/ug-locate-hook.py` | ✅ |
 | `uug-user-memory` | UC/UP/UF 영속 (vendored schema-driven wm 엔진 + bootstrap) | `bootstrap.py`, vendored `wm_node.py` | ✅ |
-| `uug-pattern-analytics` | 발화→intent 빈도·반복 탐지 → user-pattern 후보 · 발화별 타깃 태깅 · keyword-map 학습 · 유사 발화 색인 · 추론 방식 평가 | `analyze.py`, `tag_targets.py`, `keyword_map.py`, `similar.py`, `eval_targets.py` | ✅ |
+| `uug-pattern-analytics` | 발화→intent 빈도·반복 탐지 → user-pattern 후보 · 발화별 타깃 태깅 · keyword-map 학습 · 유사 발화 색인 · 추론 방식 평가 | `analyze.py`, `tag_targets.py`, `keyword_map.py`, `vocab_map.py`, `similar.py`, `eval_targets.py` | ✅ |
 
 ---
 
@@ -195,6 +220,7 @@ ug infer "좋아 이어서 하자" --transcript <session.jsonl>   # + 연속성�
 cd skills/uug-pattern-analytics
 python3 scripts/tag_targets.py            # 발화별 타깃 태깅 (증분, Claude Code·Codex·Antigravity 트랜스크립트)
 python3 scripts/keyword_map.py            # tacit 키워드 → 작업 프로젝트 분포
+python3 scripts/vocab_map.py              # 작업어휘 → 레포 적용 빈도 (C3)
 
 # 유사 발화: zvec 은 Python ≥3.10. ug.py 는 기본으로 ~/.local/share/uug/venv 를 찾는다 (UUG_VENV_PY 로 변경)
 python3.11 -m venv ~/.local/share/uug/venv

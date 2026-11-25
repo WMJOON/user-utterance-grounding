@@ -1,0 +1,26 @@
+@prefix uug:  <https://uug.dev/ontology/> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# UD-0004 — 작업어휘는 4축 facet 을, 지시문은 isCommand 를 정확히 1개씩 boolean 으로 가진다.
+# 값이 빠지면 "모름"이 되어 binary 조건이 성립하지 않으므로 누락을 위반으로 본다.
+
+uug:WorkTermShape a sh:NodeShape ;
+    sh:targetSubjectsOf skos:inScheme ;
+    sh:or ( [ sh:path skos:inScheme ; sh:hasValue uug:DirectiveScheme ]
+            [ sh:and ( uug:FacetWorkflow uug:FacetRepository uug:FacetExecution uug:FacetArtifact ) ] ) .
+
+uug:FacetWorkflow   sh:path uug:isWorkflow   ; sh:datatype xsd:boolean ; sh:minCount 1 ; sh:maxCount 1 .
+uug:FacetRepository sh:path uug:isRepository ; sh:datatype xsd:boolean ; sh:minCount 1 ; sh:maxCount 1 .
+uug:FacetExecution  sh:path uug:isExecution  ; sh:datatype xsd:boolean ; sh:minCount 1 ; sh:maxCount 1 .
+uug:FacetArtifact   sh:path uug:isArtifact   ; sh:datatype xsd:boolean ; sh:minCount 1 ; sh:maxCount 1 .
+
+uug:DirectiveShape a sh:NodeShape ;
+    sh:targetSubjectsOf skos:inScheme ;
+    sh:or ( [ sh:path skos:inScheme ; sh:hasValue uug:WorkTermScheme ]
+            [ sh:path uug:isCommand ; sh:datatype xsd:boolean ; sh:minCount 1 ; sh:maxCount 1 ] ) .
+
+uug:LabelShape a sh:NodeShape ;
+    sh:targetSubjectsOf skos:inScheme ;
+    sh:property [ sh:path skos:prefLabel ; sh:minCount 1 ] .

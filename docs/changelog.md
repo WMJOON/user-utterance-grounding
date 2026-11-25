@@ -1,5 +1,17 @@
 # 변경 이력
 
+## v0.5.0 (2026-11-25) — 작업어휘 SKOS와 Binary Condition, 같은 대상 주입 생략
+
+- **작업어휘·지시문 SKOS 스킴** `taxonomy/vocab_terms.ttl` + `references/shapes/vocab_shapes.ttl`. 작업어휘는 `isWorkflow`/`isRepository`/`isExecution`/`isArtifact` 를 xsd:boolean 으로 정확히 하나씩 갖는다(SHACL). 어휘가 가리키는 MSO 클래스는 `uug:denotesType wf:Workflow` 로 가리키기만 한다. 소비 API `src/vocab.py`.
+- **동음이의어 분리**: '정리' → 치우기(`Tidy`, 저장소) / 구조화(`Structure`, "~로 정리", 산출물). 더 긴 label 이 맞으면 짧은 label 만 맞은 개념은 버린다. 작성자 발화 1,709턴 분석 근거. `tidy-organize` intent 는 `Tidy` 에 연결.
+- **지시문 어미**: 이 사용자의 "~해볼까?"·"~할까"는 제안(명령)으로, "~거지"·"~말이지"·"~같은데"는 의견(비명령)으로, "1번"·"A로"는 선택 승인으로 판정. 판정 불가 발화 75% → 61%.
+- **C1** `ug locate`: 작업어휘 label 은 explicit 지칭어가 아니다. 서브모듈 디렉토리명 'repository' 가 발화의 영어 단어에 맞아 엉뚱한 프로젝트로 `clear` 확정되던 오류 수정(프로젝트 id 자체는 예외).
+- **동점 해소** `match_intent`: margin 0 일 때만 facet·지시문 호환 점수로 순서를 정한다(`tiebreak`). 그 intent 가 이미 키워드로 센 어휘는 근거에서 뺀다(순환 근거 차단). `margin` 은 관측값 그대로 둔다. intent 에 `vocab_concept` 를 달면 개념 label 이 trigger 와 합집합된다(기존 키워드 보존).
+- **C3** `ug infer`: 발화의 작업어휘가 직전 레포에서 드물고 다른 레포에 몰려 있으면 그 레포를 `recommended_by: 작업어휘 빈도` 로 추천하고 clarify 한다(likely·clarify·키워드 없음 분기). 빈도는 `uug-pattern-analytics/scripts/vocab_map.py`(신규)가 작업 신호로 확정된 발화만으로 학습한다. 맵이 없으면 판정 보류로 기존 동작과 같다. 로그에 `vocab_c3`·`vocab_term` 추가.
+- **같은 대상 주입 생략** `apply_same_target_policy`: 대상이 직전 작업 레포와 같고 이 대화에서 이미 안내했다면 주입하지 않는다(`same_as_prev`). 세션 첫 안내·대상 전환·연속성이 아닌 추천·컨텍스트 압축 이후는 유지. v0.4.0 의 "같은 디렉토리도 계약을 전달한다"를 대체한다. 주입 이력은 `~/.local/share/uug/inject-state.json`(`UUG_INJECT_STATE`, 원문 없음). 작성자 locate-log 재생: 넛지 1,482 → 734(추천 근거가 없는 옛 로그라 추정치).
+- 테스트: `test_vocab.py`, `test_inject_policy.py` 추가. 픽스처 grounding 테스트가 `taxonomy/` 도 복사한다.
+- 알려진 한계: Claude Code 의 압축 기록 형식(`compact_boundary`·`isCompactSummary`)은 로컬 실기록이 없어 미검증(Codex `compacted` 는 확인). C3 효과는 표본 4건으로 미입증. 로컬 MSO registry fixture 정확도 70% 는 v0.4.0 과 동일(MSO 키워드 축소 영향, 이번 릴리즈에서 수정하지 않음).
+
 ## v0.4.0 (2026-10-11) — Antigravity 연결과 작업 시작 계약
 
 - Antigravity app/CLI/IDE 전역 `PreInvocation` 어댑터와 `install.sh --antigravity` 추가. `--all`은 Claude·Codex·Antigravity를 포함한다. 다른 훅을 보존하고 재설치는 멱등이다.

@@ -95,17 +95,36 @@ def _intent_to_dict(g: Graph, subj, source_project: str | None = None) -> dict:
                 "default_value": (str(dv) if dv is not None else None),
             })
 
+    vocab_concepts = sorted(_short(v) for v in props.get("vocab_concept", []))
     return {
         "intent_id":        _scalar("intent_id"),
         "verb_concept":     _short(props.get("verb_concept", [None])[0]),
         "target_concept":   _short(props.get("target_concept", [None])[0]),
-        "trigger_keywords": _list("trigger_keywords"),
+        # 작업어휘 개념(UD-0004) label 을 trigger 와 합집합 — 기존 키워드는 그대로라 비회귀.
+        "trigger_keywords": _with_vocab_labels(_list("trigger_keywords"), vocab_concepts),
+        "vocab_concepts":   vocab_concepts,
         "slot_specs":       slots,
         "source_project":   source_project,
         # 후보 공간 위계 (UD-0001): meta|repository|workflow|workflow.executionRail.
         # 미선언(도메인 레지스트리 등)이면 None — 후보 바인딩 정책은 후속, 지금은 노출만.
         "scope":            _scalar("scope") or None,
     }
+
+
+def _with_vocab_labels(keywords: list[str], concepts: list[str]) -> list[str]:
+    """intent 가 가리키는 작업어휘 개념의 label 을 trigger 목록 뒤에 덧붙인다(중복 제거)."""
+    if not concepts:
+        return keywords
+    import vocab
+    labels = {c["concept"]: c["labels"] for c in vocab.list_concepts("WorkTermScheme")}
+    out = list(keywords)
+    seen = {k.lower() for k in out}
+    for c in concepts:
+        for l in labels.get(c, []):
+            if l.lower() not in seen:
+                seen.add(l.lower())
+                out.append(l)
+    return out
 
 
 def _normalize_registries(registries) -> list[dict]:
@@ -164,15 +183,44 @@ def match_intent(utterance: str, registries=None) -> dict:
     if not scored:
         return {"intent": None, "score": 0, "hits": [], "candidates": [],
                 "top2_score": None, "margin": None, "ambiguous": False}
-    top = scored[0]
     top2_score = scored[1][0] if len(scored) > 1 else None
-    margin = None if top2_score is None else top[0] - top2_score
+    margin = None if top2_score is None else scored[0][0] - top2_score
+    tiebreak = _tiebreak(utterance, scored) if margin == 0 else None
+    if tiebreak and tiebreak["resolved"]:
+        winner = tiebreak["winner"]
+        scored.sort(key=lambda x: x[1] != winner)   # 승자만 맨 앞으로, 나머지 순서 유지
+    top = scored[0]
     return {
         "intent": top[3],
         "score": top[0],
         "hits": top[2],
         "candidates": [(s[1], s[0], s[2]) for s in scored],
         "top2_score": top2_score,
+        # margin 은 키워드 점수 차 그대로 둔다(관측용). 동점 해소 여부는 tiebreak 로 본다.
         "margin": margin,
-        "ambiguous": margin == 0,
+        "ambiguous": margin == 0 and not (tiebreak and tiebreak["resolved"]),
+        "tiebreak": tiebreak,
     }
+
+
+def _tiebreak(utterance: str, scored: list) -> dict:
+    """키워드 동점(margin 0)일 때만: 작업어휘 facet(C1)·지시문(C2) 호환 점수로 해소 시도.
+    UD-0001 — 후보를 지우지 않고 순서만 정한다. 호환 점수도 동점이면 미해소(HITL 유지)."""
+    import vocab
+    terms = vocab.match_terms(utterance)
+    command = vocab.is_command(utterance)
+    tied = [s for s in scored if s[0] == scored[0][0]]
+
+    def compat(s):
+        # facet 근거는 이 intent 가 이미 키워드로 센 어휘를 뺀 나머지에서만 — 자기 트리거가
+        # 자기 scope 를 지지하는 순환 근거를 막는다 (meta intent 가 늘 지는 편향 방지).
+        own = {h.lower() for h in s[2]}
+        others = [t for t in terms if not {h.lower() for h in t["hits"]} & own]
+        return vocab.intent_compat(s[3], vocab.facet_vector(utterance, others), command)
+
+    compat = sorted(((compat(s), s[1]) for s in tied), key=lambda x: (-x[0], x[1]))
+    facets = vocab.facet_vector(utterance, terms)
+    resolved = len(compat) > 1 and compat[0][0] > compat[1][0]
+    return {"resolved": resolved, "winner": compat[0][1] if resolved else None,
+            "compat": compat, "facets": facets, "is_command": command,
+            "terms": [t["concept"] for t in terms]}

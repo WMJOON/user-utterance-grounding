@@ -1,0 +1,106 @@
+@prefix uug:  <https://uug.dev/ontology/> .
+@prefix wf:   <https://mso.dev/ontology/workflow#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# user-utterance-grounding — 작업어휘·지시문 SKOS 스킴 (UD-0004).
+# 소비: src/vocab.py (RDFLib). 검증: references/shapes/vocab_shapes.ttl (SHACL).
+#
+# 작업어휘(WorkTerm): 발화의 "무엇을" 쪽 어휘. 4축 binary facet 을 xsd:boolean 으로
+#   정확히 1개씩 갖는다. rdf:type 멤버십은 open world 라 "아니다"를 표현 못 하므로 쓰지 않는다.
+#   facet ↔ UD-0001 scope: isRepository↔repository, isWorkflow↔workflow,
+#   isExecution↔workflow.executionRail. isArtifact 는 scope 가 아닌 facet.
+# 지시문(Directive): 발화 끝의 서법(해줘/하자/어때). isCommand 하나만 갖는다.
+#   지시문은 intent trigger_keywords 에 넣지 않는다 (거의 모든 발화에 걸린다).
+# 동음이의어: 같은 label 이 여러 개념에 붙으면 그 자체가 후보 다중성이다.
+# 어휘 → 레포 연결은 TTL 에 두지 않는다. 과거 발화에서 학습한 빈도 맵(uug-pattern-analytics
+#   vocab_map.py)이 맡는다 — projects.yaml keywords 와의 중복 관리를 피하기 위함(UD-0004).
+#
+# facet 값은 의미 기준이다. 2026-11-25 사용자 발화 분석(1709턴)으로 동음이의어(정리)와 어미를 보정했다.
+
+uug:WorkTermScheme  a skos:ConceptScheme ; skos:prefLabel "작업어휘"@ko .
+uug:DirectiveScheme a skos:ConceptScheme ; skos:prefLabel "지시문"@ko .
+
+uug:isWorkflow   a rdfs:Property ; rdfs:range xsd:boolean ; rdfs:comment "워크플로우(절차·단계)를 가리키는가" .
+uug:isRepository a rdfs:Property ; rdfs:range xsd:boolean ; rdfs:comment "저장소·디렉토리 단위 작업을 가리키는가" .
+uug:isExecution  a rdfs:Property ; rdfs:range xsd:boolean ; rdfs:comment "실행 중 run/rail 제어를 가리키는가" .
+uug:isArtifact   a rdfs:Property ; rdfs:range xsd:boolean ; rdfs:comment "산출물(문서·기록·보고서)을 가리키는가" .
+uug:isCommand    a rdfs:Property ; rdfs:range xsd:boolean ; rdfs:comment "지시문이 실행 요청(명령·청유)인가" .
+uug:denotesType  a rdfs:Property ; rdfs:comment "어휘가 가리키는 외부 클래스. 어휘 자체는 그 인스턴스가 아니다 (UD-0004)." .
+
+# ─── 클래스 이름 어휘: 발화에 클래스명 자체가 나올 때 (프로젝트 이름으로 오인 금지) ───
+uug:WorkflowWord a skos:Concept ; skos:inScheme uug:WorkTermScheme ;
+    skos:prefLabel "워크플로우"@ko ; skos:altLabel "workflow"@en, "워크플로"@ko ;
+    uug:denotesType wf:Workflow ;
+    uug:isWorkflow true ; uug:isRepository false ; uug:isExecution false ; uug:isArtifact false .
+
+uug:RepositoryWord a skos:Concept ; skos:inScheme uug:WorkTermScheme ;
+    skos:prefLabel "레포지토리"@ko ;
+    skos:altLabel "repository"@en, "repo"@en, "레포"@ko, "저장소"@ko ;
+    uug:isWorkflow false ; uug:isRepository true ; uug:isExecution false ; uug:isArtifact false .
+
+uug:ExecutionWord a skos:Concept ; skos:inScheme uug:WorkTermScheme ;
+    skos:prefLabel "실행"@ko ; skos:altLabel "execution"@en ;
+    uug:isWorkflow false ; uug:isRepository false ; uug:isExecution true ; uug:isArtifact false .
+
+uug:ArtifactWord a skos:Concept ; skos:inScheme uug:WorkTermScheme ;
+    skos:prefLabel "산출물"@ko ; skos:altLabel "artifact"@en, "아티팩트"@ko ;
+    uug:isWorkflow false ; uug:isRepository false ; uug:isExecution false ; uug:isArtifact true .
+
+# ─── 작업 어휘 (label 은 현재 intent trigger_keywords 와 맞춰 회귀 없음을 유지) ───
+uug:Research a skos:Concept ; skos:inScheme uug:WorkTermScheme ;
+    skos:prefLabel "리서치"@ko ; skos:altLabel "research"@en, "자료 조사"@ko ;
+    uug:denotesType wf:Workflow ;
+    uug:isWorkflow true ; uug:isRepository false ; uug:isExecution false ; uug:isArtifact true ; .
+
+# '정리' 동음이의어 (2026-11-25 발화 분석): "bot 다 정리하자"·"워크트리 정리하자" = 치우기(저장소),
+# "주요 개념을 skos로 정리해줘" = 구조화해 산출물로 남기기. 더 긴 label("로 정리")이 맞으면
+# 짧은 label 만 맞은 개념은 버린다 (vocab.match_terms).
+uug:Tidy a skos:Concept ; skos:inScheme uug:WorkTermScheme ;
+    skos:prefLabel "정리"@ko ; skos:altLabel "리팩터"@ko, "이관"@ko, "치워"@ko, "지워"@ko ;
+    uug:isWorkflow false ; uug:isRepository true ; uug:isExecution false ; uug:isArtifact false ; .
+
+uug:Structure a skos:Concept ; skos:inScheme uug:WorkTermScheme ;
+    skos:prefLabel "구조화"@ko ; skos:altLabel "로 정리"@ko, "으로 정리"@ko, "정리해서"@ko ;
+    uug:isWorkflow false ; uug:isRepository false ; uug:isExecution false ; uug:isArtifact true ; .
+
+uug:Record a skos:Concept ; skos:inScheme uug:WorkTermScheme ;
+    skos:prefLabel "기록"@ko ; skos:altLabel "메모"@ko ;
+    uug:isWorkflow false ; uug:isRepository false ; uug:isExecution false ; uug:isArtifact true ; .
+
+uug:Release a skos:Concept ; skos:inScheme uug:WorkTermScheme ;
+    skos:prefLabel "릴리즈"@ko ; skos:altLabel "release"@en, "배포"@ko ;
+    uug:isWorkflow true ; uug:isRepository true ; uug:isExecution false ; uug:isArtifact true ; .
+
+# ─── 지시문 — 발화 끝(문장부호 제외)에서 가장 긴 label 로 판정 ───
+# 어미는 2026-11-25 사용자 발화 1709턴 분석으로 보강. 이 사용자의 "~해볼까?"·"~할까"는
+# 묻는 게 아니라 하자는 제안이라 Propose 에 둔다. "1번"·"A로" 같은 선택 답변은 진행 승인이다.
+uug:Request a skos:Concept ; skos:inScheme uug:DirectiveScheme ;
+    skos:prefLabel "해줘"@ko ;
+    skos:altLabel "해주세요"@ko, "해줄래"@ko, "줄래"@ko, "줘"@ko, "해라"@ko, "해"@ko, "돌려"@ko,
+                  "해줘봐"@ko, "해봐"@ko, "봐바"@ko, "해둬"@ko, "둬"@ko ;
+    uug:isCommand true .
+
+uug:Propose a skos:Concept ; skos:inScheme uug:DirectiveScheme ;
+    skos:prefLabel "하자"@ko ;
+    skos:altLabel "해보자"@ko, "합시다"@ko, "하자고"@ko, "자고"@ko, "가자"@ko, "만들자"@ko, "보자"@ko,
+                  "할까"@ko, "볼까"@ko, "을까"@ko ;
+    uug:isCommand true .
+
+uug:Choose a skos:Concept ; skos:inScheme uug:DirectiveScheme ;
+    skos:prefLabel "번"@ko ; skos:altLabel "번으로"@ko, "로 가자"@ko, "로 하자"@ko ;
+    uug:isCommand true .
+
+uug:Ask a skos:Concept ; skos:inScheme uug:DirectiveScheme ;
+    skos:prefLabel "어때"@ko ;
+    skos:altLabel "어떨까"@ko, "아닐까"@ko, "않을까"@ko, "있나"@ko, "인가"@ko, "건가"@ko, "나요"@ko,
+                  "는지"@ko, "했나"@ko, "않나"@ko, "않냐"@ko, "맞나"@ko ;
+    uug:isCommand false .
+
+uug:Opinion a skos:Concept ; skos:inScheme uug:DirectiveScheme ;
+    skos:prefLabel "거지"@ko ;
+    skos:altLabel "말이지"@ko, "말이야"@ko, "같은데"@ko, "좋을듯"@ko, "거야"@ko, "텐데"@ko,
+                  "있잖아"@ko, "좋겠어"@ko, "겠는데"@ko ;
+    skos:definition "의견·확인. 실행 요청이 아니다." ;
+    uug:isCommand false .

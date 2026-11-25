@@ -45,6 +45,7 @@ uug:add-to-knowledge a uug:Intent ;
 # ─── QUERY: 리서치 ──────────────────────────────────────────
 uug:run-research a uug:Intent ;
     uug:intent_id "run-research" ;
+    uug:vocab_concept uug:Research ;
     uug:scope "repository" ;
     uug:verb_concept uug:QueryVerb ;
     uug:target_concept uug:Project ;
@@ -60,6 +61,7 @@ uug:run-research a uug:Intent ;
 # ─── CREATE: 기록 ───────────────────────────────────────────
 uug:record-memory a uug:Intent ;
     uug:intent_id "record-memory" ;
+    uug:vocab_concept uug:Record ;
     uug:scope "meta" ;
     uug:verb_concept uug:CreateVerb ;
     uug:target_concept uug:Project ;
@@ -78,6 +80,7 @@ uug:record-memory a uug:Intent ;
 # ─── UPDATE: 정리 ───────────────────────────────────────────
 uug:tidy-organize a uug:Intent ;
     uug:intent_id "tidy-organize" ;
+    uug:vocab_concept uug:Tidy ;
     uug:scope "repository" ;
     uug:verb_concept uug:UpdateVerb ;
     uug:target_concept uug:Project ;

@@ -9,7 +9,7 @@ description: >
   14_user-pattern-optimizer(발화 마이닝) 흡수 대상.
   다음 상황에서 사용한다: (1) 발화 모음에서 반복 워크플로우·마찰 탐지,
   (2) intent 사용 빈도 측정, (3) UP 후보 추출 → uug-user-memory 기록,
-  (4) 트랜스크립트 발화별 타깃 태깅(원문 미저장)·tacit 키워드 분포(keyword_map)·
+  (4) 트랜스크립트 발화별 타깃 태깅(원문 미저장)·tacit 키워드 분포(keyword_map)·작업어휘 빈도(vocab_map)·
   유사 발화 색인(zvec + bge-m3) — ug locate/infer 의 학습 산출물, (5) 추론 방식 LOO 평가.
 ---
 
@@ -46,6 +46,16 @@ python3 scripts/keyword_map.py   # workspace/keyword-map.json 생성 + 요약 (t
 - 키워드별 `explicit`(프로젝트 이름) / `exclusive`(한쪽으로 모임) / `ambiguous`(갈라짐) / `sparse`(관측 부족) 판정, `drift`=등록 소유자와 실제 top 불일치.
 - 소비자: uug-grounding `ug.py locate` — ambiguous 면 clarify(추측 금지), 확정이면 대상 디렉토리 안내.
 
+
+## CLI: `scripts/vocab_map.py` — 작업어휘 → 레포 적용 빈도 (v0.5.0)
+```bash
+python3 scripts/vocab_map.py          # workspace/vocab-term-map.json 생성 + 요약 (tag_targets.py 뒤에 실행)
+python3 scripts/vocab_map.py --show   # 기존 맵 요약만
+```
+- `uug-grounding/taxonomy/vocab_terms.ttl` 의 작업어휘(리서치·정리·기록 등)가 어느 레포에서 얼마나 쓰였는지 센다. `share`=어휘가 쓰인 발화 중 그 레포 비율, `rate`=그 레포 발화 중 그 어휘 비율.
+- **작업 신호(`target_via` 에 work)로 타깃이 정해진 발화만** 센다. 발화 키워드로만 정해진 타깃은 `projects.yaml` keywords 를 다시 세는 순환이라 제외한다.
+- 원장에는 원문이 없으므로 `ref` 로 트랜스크립트를 다시 읽는다. 산출물에도 원문을 남기지 않는다(개념·프로젝트·건수만). 정리된 트랜스크립트는 세지 못한다 — 그때는 `tag_targets.py --rebuild` 로 원장을 다시 만든다.
+- `ug.py infer` 의 C3(직전 레포에서 드문 업무면 다른 레포 추천)가 읽는다. 맵이 없으면 C3 는 판정 보류(None)로 기존 동작과 같다.
 ## CLI: `scripts/similar.py` — 유사 발화(zvec) 기반 후보 재정렬
 
 ```bash
@@ -74,7 +84,7 @@ $V scripts/eval_targets.py --gate        # ug.py infer 넛지 규칙 재현 → 
 - 임베딩 서버 장애 시 로컬 모델을 적재하지 않는다. 조회는 `embedding-unavailable`·빈 순위를 반환하며, `ug.py`는 명시·키워드·직전 작업 신호를 계속 사용한다. 색인·평가 작업은 임베딩 오류를 전파해 중단한다.
 
 ## 갱신 순서
-`tag_targets.py` → `keyword_map.py` → `similar.py index`
+`tag_targets.py` → `keyword_map.py` → `vocab_map.py` → `similar.py index`
 
 ## 흡수 로드맵
 
