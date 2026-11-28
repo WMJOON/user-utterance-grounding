@@ -43,3 +43,17 @@ my-orchestrator:
   dispatch:                                   # (선택) 도메인 intent 뒷단 위임 진입점
     kind: cli                                 # 현재 지원: cli (subprocess 경계)
     entry: repository/skills/intent-registry/src/pipeline.py   # `python entry ground --intent-id X --utterance "..."`
+
+# ---- repository task (선택) ----
+# context-repository 슬롯이 이 저장소일 때, 발화의 작업어(lexical)가 가리키는 절차를 grounding 한다.
+# 저장소 어휘(aliases 등)로 대상이 확정(status=clear)되면 세션의 context-repository 가 전환된다.
+# 작업어가 context-repository 가 아닌 다른 저장소 한 곳에만 있으면 전환을 되묻는다.
+# example-content-hub:
+#   anchor: example_anchor
+#   rel: content-hub
+#   aliases: ["콘텐츠 허브"]
+#   tasks:
+#     - id: notion-register
+#       lexical: ["노션에 올려", "노션 업로드"]
+#       procedure: "python3 channels/harnesses/complete_content.py <main.md>"
+#       note: "MCP 로 직접 페이지를 만들지 않는다"

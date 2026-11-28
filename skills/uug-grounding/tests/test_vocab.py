@@ -107,6 +107,7 @@ def fake_registry(monkeypatch, tmp_path):
         "hub": {"anchor": "vault", "rel": "hub", "keywords": ["콘텐츠 허브"]},   # :Keyword (alias 아님)
     }
     monkeypatch.setattr(ug, "load_projects", lambda: projects)
+    monkeypatch.setattr(ug, "present_projects", lambda p, a: p)  # 가짜 경로 — 기기 존재 필터 우회
     monkeypatch.setattr(ug, "_umbrella_subs", lambda p, a: {"repository": "umbrella:sub/repository"})
     monkeypatch.setattr(ug, "KEYWORD_MAP", tmp_path / "no-keyword-map.json")
     vmap = {"_meta": {"utterances": 150, "project_n": {"kb": 50, "hub": 100}},

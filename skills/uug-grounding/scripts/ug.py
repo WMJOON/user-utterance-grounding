@@ -93,6 +93,17 @@ def load_projects():
     return _load_yaml(PROJECTS, {}) or {}
 
 
+def present_projects(projects, anchors):
+    """이 머신에 실제로 있는 프로젝트만 남긴다 (경로 해석 성공 + 디렉토리 존재).
+    디바이스마다 클론된 레포가 달라도 projects.yaml 하나를 공유하고, 추론 후보는 기기별로 좁힌다."""
+    out = {}
+    for name, p in projects.items():
+        path, err = resolve_one(name, projects, anchors)
+        if not err and Path(path).exists():
+            out[name] = p
+    return out
+
+
 def load_session():
     try:
         return json.loads(SESSION.read_text(encoding="utf-8"))
@@ -149,8 +160,7 @@ def cmd_doctor(args):
         elif path and Path(path).exists():
             print(f"  ✓ {name}: {path}")
         else:
-            print(f"  ✗ {name}: {path} — 이 머신에 없음(미클론/이동)")
-            ok = False
+            print(f"  − {name}: {path} — 이 머신에 없음 (추론 후보에서 제외)")
     return 0 if ok else 1
 
 
@@ -230,8 +240,8 @@ def _do_ground(utterance):
     sys.path.insert(0, str(SKILL_DIR / "src"))
     import lookup  # rdflib
 
-    projects = load_projects()
     anchors = load_anchors()
+    projects = present_projects(load_projects(), anchors)
     registries = build_registries(projects, anchors)
     m = lookup.match_intent(utterance, registries=registries)
     intent = m["intent"]
@@ -416,7 +426,8 @@ def cmd_dispatch(args):
             print(f"    {iid} (score={sc}, hits={h})")
         return 2
 
-    projects, anchors = load_projects(), load_anchors()
+    anchors = load_anchors()
+    projects = present_projects(load_projects(), anchors)
     grounded, err = dispatch_to_project(r, projects, anchors, args.utterance)
 
     if grounded is not None:
@@ -564,7 +575,8 @@ def do_locate(utterance, use_similar=False):
                  가리키면 :WorkTerm 쪽을 추천(recommended_by: 작업어휘)
       none     — 지칭 신호 없음
     """
-    projects, anchors = load_projects(), load_anchors()
+    anchors = load_anchors()
+    projects = present_projects(load_projects(), anchors)
     try:
         kmap = json.loads(KEYWORD_MAP.read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
@@ -782,7 +794,8 @@ def do_infer(utterance, transcript=None):
       likely             tacit 단일 → emit (연속성과 어긋나면 clarify 로 격상)
       inferred           키워드 없음 → prev 와 knn 일치 / 명시적 연속 제어 / prev 없이 강한 knn이면 emit
     """
-    projects, anchors = load_projects(), load_anchors()
+    anchors = load_anchors()
+    projects = present_projects(load_projects(), anchors)
     loc = do_locate(utterance)
     prev = prev_target(transcript, utterance)
     out = dict(loc, prev=prev)

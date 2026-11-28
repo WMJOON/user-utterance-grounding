@@ -1,4 +1,4 @@
-# user-utterance-grounding (UUG) v0.5.1
+# user-utterance-grounding (UUG) v0.6.0
 
 UUG는 **사용자 발화·의도 중심의 크로스-프로젝트 grounding 도구**다 — [MSO](https://github.com/WMJOON/multi-swarm-orchestrator)의 user-side 대응.
 
@@ -76,7 +76,7 @@ flowchart TD
 
 ---
 
-## 여섯 가지 핵심
+## 일곱 가지 핵심
 
 ### 1. Utterance → Intent Grounding (namespace-agnostic 멀티-레지스트리)
 
@@ -201,6 +201,10 @@ A ≠ B → 주입
 C3 의 빈도는 `vocab_map.py` 가 작업 신호로 확정된 과거 발화만으로 학습한다. 작성자 환경 LOO 평가에서 발동 4건(추천 정답 2, 직전 레포 정답 1) — 표본이 작고 임계값도 같은 데이터로 정한 초기값이라 **자동 확정에 쓰지 않는다**.
 
 ---
+
+### 7. context-repository 와 repository task (v0.6.0)
+
+해석을 두 단계로 나눈다. **repository lexical 과 task lexical 의 빈도로 저장소를 찾고**, **context-repository 와 task lexical 로 task context 를 찾는다.** context-repository 는 세션별 슬롯으로, 저장소 어휘로 대상이 확정되면 전환된다. 그 저장소의 `projects.yaml` `tasks[]` 에 등록된 작업어가 발화에 있으면 해당 절차(예: 콘텐츠 허브의 "노션에 올려" → `complete_content.py`)를 주입한다. 작업어가 다른 저장소에만 있으면 전환을 되묻는다.
 
 ## 스킬팩 구성 (orchestration 패턴 — MSO/MSM 류)
 
