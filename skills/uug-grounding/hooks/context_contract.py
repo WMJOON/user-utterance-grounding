@@ -75,3 +75,86 @@ def format_context(loc, cwd=None):
             "기존 근거를 재사용하되 상태 변경은 재검증할 것. intent→action은 대상 프로젝트의 지침·스킬을 "
             "따르고 기존 사용자 승인 경계를 유지할 것. 훅 출력만으로 기록 조회·행동 완료를 주장하지 말 것."
             + (("\n" + rules) if (loc["status"] != "likely" and (rules := target_rules(c["path"], cwd))) else ""))
+
+
+# ---- working-environment 슬롯 (맥락) + repository task grounding ----
+# 1. repository lexical(저장소 어휘)로 대상이 확정(status=clear)되면 세션의 working-environment 를 그 저장소로 전환한다.
+# 2. 매 프롬프트, working-environment 저장소의 tasks[].lexical(작업어)이 발화에 있으면 그 저장소 절차(repository task)로 grounding 한다.
+# 3. 작업어가 working-environment 에 없고 다른 저장소 한 곳에만 있으면 전환을 제안한다.
+ENV_STATE = Path(os.environ.get("UUG_WORKING_ENV_STATE",
+                                str(Path.home() / ".local" / "share" / "uug" / "working-env.json")))
+
+
+def session_key(transcript=None, cwd=None):
+    return str(transcript or cwd or "default")
+
+
+def _load_env_state():
+    try:
+        return json.loads(ENV_STATE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def working_env(key):
+    return _load_env_state().get(key)
+
+
+def update_working_env(loc, key, now=None):
+    """저장소 어휘로 대상이 확정되면 슬롯을 전환한다. 전환했으면 새 값을 반환한다."""
+    if not loc or loc.get("status") != "clear" or not loc.get("emit"):
+        return None
+    c = (loc.get("candidates") or [{}])[0]
+    repo = c.get("project")
+    if not repo:
+        return None
+    state = _load_env_state()
+    cur = state.get(key) or {}
+    if cur.get("repo") == repo:
+        return None
+    state[key] = {"repo": repo, "path": c.get("path"), "since": now or time.time(), "by": "repository_trigger"}
+    try:
+        ENV_STATE.parent.mkdir(parents=True, exist_ok=True)
+        ENV_STATE.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+    return state[key]
+
+
+def _norm(s):
+    return "".join(str(s).split()).lower()
+
+
+def _match_tasks(utterance, tasks):
+    u = _norm(utterance)
+    return [t for t in (tasks or []) if any(_norm(w) and _norm(w) in u for w in t.get("lexical") or [])]
+
+
+def ground_task(utterance, env, projects):
+    """working-environment 기준 repository task 를 찾는다. 반환: (kind, repo, tasks) 또는 None."""
+    env_repo = (env or {}).get("repo")
+    if env_repo:
+        hits = _match_tasks(utterance, (projects.get(env_repo) or {}).get("tasks"))
+        if hits:
+            return ("grounded", env_repo, hits)
+    owners = [(name, _match_tasks(utterance, (p or {}).get("tasks")))
+              for name, p in (projects or {}).items() if name != env_repo]
+    owners = [(n, h) for n, h in owners if h]
+    if len(owners) == 1:
+        return ("switch", owners[0][0], owners[0][1])
+    return None
+
+
+def format_task(result, env=None):
+    if not result:
+        return None
+    kind, repo, tasks = result
+    lines = []
+    for t in tasks:
+        lines.append(f"- {t.get('id')}: {t.get('procedure')}" + (f" ({t.get('note')})" if t.get("note") else ""))
+    if kind == "grounded":
+        return (f"[uug-task] working-environment={repo} — 이 발화의 작업어는 이 저장소의 절차를 가리킨다. "
+                f"일반 도구로 직접 처리하지 말고 아래 절차를 따를 것.\n" + "\n".join(lines))
+    cur = (env or {}).get("repo") or "미설정"
+    return (f"[uug-task] 작업어가 현재 working-environment({cur})가 아닌 {repo} 의 절차를 가리킨다. "
+            f"{repo} 로 전환할지 사용자에게 확인한 뒤 진행할 것.\n" + "\n".join(lines))
