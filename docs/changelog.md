@@ -1,5 +1,11 @@
 # 변경 이력
 
+## v0.6.2 (2026-11-28) — 어휘 유형 이름 정리 (동작 변경 없음)
+
+- v0.5.0 설계의 `:ProjectName` 을 `:RepositoryLexical`, `:WorkTerm` 을 `:TaskLexical` 로 부른다. v0.6.0 글·릴리스 노트의 repository lexical / task lexical 과 맞추기 위함이다.
+- README·SKILL·`ug.py` 주석·테스트 주석의 이름을 바꿨다.
+- `skills/uug-grounding/taxonomy/lexical_types.ttl` 을 추가해 `uug:RepositoryLexical`·`uug:TaskLexical` 을 선언하고 옛 이름(ProjectName·WorkTerm)을 altLabel 로 남겼다. 기존 IRI(`uug:WorkTermScheme` 등), `kind: workterm` 값, 판정 결과는 그대로다. 새 개념은 `skos:inScheme` 를 쓰지 않는다(SHACL 이 작업어휘 facet 을 요구하므로).
+
 ## v0.6.0 (2026-11-28) — context-repository 슬롯과 repository task grounding
 
 > 작업 중인 저장소(context-repository)의 repository task 맥락을 놓치는 문제를 잡는다. 콘텐츠 허브 밖 맥락에서 "노션에 올려줘"가 일반 Notion 쓰기로 처리되어, 그 저장소의 등록 하네스(`complete_content.py`)를 우회한 사례가 계기다. 당시 유사 발화는 콘텐츠 허브를 0.93으로 가리켰지만 직전 작업(family-wealth)과 어긋나 `insufficient_agreement`로 넛지가 나가지 않았고, "콘텐츠 작성"·"노션 업로드"는 어떤 저장소의 신호로도 등록돼 있지 않았다.

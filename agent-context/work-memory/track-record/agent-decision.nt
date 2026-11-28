@@ -1,0 +1,15 @@
+<https://mso.dev/id/memory/AD-01a2228a4eca> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://mso.dev/ontology/work-memory#Entry> .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://mso.dev/ontology/work-memory#AgentDecision> .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#entryId> "AD-01a2228a4eca" .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#typeName> "agent-decision" .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#description> "v0.5.0 어휘 유형 이름을 :RepositoryLexical/:TaskLexical 로 정리 (문서·주석만, IRI 유지)" .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#content> "사용자 제안(2026-11-28): v0.5.0 의 :ProjectName 은 repository lexical, :WorkTerm 은 task lexical 과 같은 개념이므로 이름을 맞춘다. 1단계로 README·SKILL·ug.py 주석·테스트 주석만 바꾸고 변경 이력은 v0.5.x 항목의 옛 이름을 보존했다. uug:WorkTermScheme 등 IRI, kind: workterm 값, 판정 동작은 그대로. uug:RepositoryWord 는 클래스 이름 단어라 :RepositoryLexical 이 아니며, isRepository facet 은 이름 대응과 무관하다고 README 에 명시. TaskLexical 은 0.6.0 부터 repository task 탐색에도 쓰인다는 확장도 밝혔다. IRI 별칭 선언은 후속 단계." .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#createdAt> "2026-11-28T14:23:39Z" .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#tag> "naming" .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#tag> "lexical" .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#tag> "docs" .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#author> <https://mso.dev/id/agent/agent> .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#scope> <https://mso.dev/id/vocab/scope/repository> .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#rationale> "공개 저장소 v0.6.0 릴리스가 있어 IRI 변경은 소비자를 깨뜨릴 수 있으므로 동작 변경 없는 문서 정리부터" .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#alternative> "IRI 즉시 교체; 별칭 없이 TTL 개념 추가만" .
+<https://mso.dev/id/memory/AD-01a2228a4eca> <https://mso.dev/ontology/work-memory#confidence> <https://mso.dev/id/vocab/confidence/medium> .

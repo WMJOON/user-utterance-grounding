@@ -1,0 +1,27 @@
+@prefix uug:  <https://uug.dev/ontology/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# 어휘 유형 이름 (v0.6.2). v0.5.0 설계의 :ProjectName / :WorkTerm 을 v0.6.0 글·릴리스 노트의
+# repository lexical / task lexical 과 같은 이름으로 부르기 위한 개념 선언이다.
+#
+# 이 파일은 이름 대응만 선언한다. 기존 IRI(uug:WorkTermScheme, uug:isRepository 등)와 판정 동작은 바뀌지 않는다.
+# vocab_terms.ttl 의 스킴에 넣지 않는 이유: vocab_shapes.ttl 이 skos:inScheme 를 가진 모든 개념에
+#   작업어휘 facet 4개를 요구하므로, 여기 개념을 그 스킴에 넣으면 SHACL 이 깨진다. skos:topConceptOf 만 쓴다.
+# uug:RepositoryWord("레포지토리" 같은 클래스 이름 단어)는 uug:RepositoryLexical 이 아니다.
+#   'repository' 를 저장소 지칭어로 두면 서브모듈 디렉토리명과 맞아 엉뚱한 레포로 확정된다.
+
+uug:LexicalTypeScheme a skos:ConceptScheme ; skos:prefLabel "어휘 유형"@ko .
+
+uug:RepositoryLexical a skos:Concept ; skos:topConceptOf uug:LexicalTypeScheme ;
+    skos:prefLabel "repository lexical"@en, "저장소 지칭어"@ko ;
+    skos:altLabel "ProjectName"@en ;
+    skos:definition "저장소를 직접 가리키는 말(id·별칭). 레포 판정에서 확정(clear)으로 쓴다. 정의 위치는 projects.yaml 의 id·aliases 이고 온톨로지에 인스턴스를 두지 않는다." ;
+    skos:note "v0.5.0 의 :ProjectName. 판정 우선순위 1순위." .
+
+uug:TaskLexical a skos:Concept ; skos:topConceptOf uug:LexicalTypeScheme ;
+    skos:prefLabel "task lexical"@en, "작업 지칭어"@ko ;
+    skos:altLabel "WorkTerm"@en ;
+    skos:definition "작업을 가리키는 말(리서치·정리·노션에 올려 등). 학습한 어휘→레포 빈도로 저장소를 추정하고, v0.6.0 부터는 context-repository 와 합쳐 그 저장소의 절차(repository task)를 찾는 데도 쓴다. 확정 지칭어로는 쓰지 않는다." ;
+    skos:note "v0.5.0 의 :WorkTerm. 판정 우선순위 2순위. 개별 어휘는 uug:WorkTermScheme 에 둔다." ;
+    rdfs:seeAlso uug:WorkTermScheme .
