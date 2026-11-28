@@ -1,11 +1,14 @@
 """어휘 유형 이름(v0.6.1): RepositoryLexical/TaskLexical 선언이 기존 어휘 로딩과 SHACL 을 건드리지 않는다."""
+import sys
 from pathlib import Path
 
 from rdflib import Graph, Namespace, RDF
 from rdflib.namespace import SKOS
 
 UUG = Namespace("https://uug.dev/ontology/")
-TAX = Path(__file__).resolve().parent.parent / "taxonomy"
+SKILL = Path(__file__).resolve().parent.parent
+TAX = SKILL / "taxonomy"
+sys.path.insert(0, str(SKILL / "src"))
 
 
 def _g():
@@ -28,7 +31,8 @@ def test_not_in_any_work_term_scheme():
 
 
 def test_work_term_vocabulary_is_unchanged():
-    from src import vocab  # noqa: PLC0415
-    assert len(vocab.list_concepts("WorkTermScheme")) > 0
-    labels = vocab.work_term_labels() if hasattr(vocab, "work_term_labels") else set()
-    assert "repository lexical" not in {l.lower() for l in labels}
+    import vocab  # noqa: PLC0415
+    concepts = vocab.list_concepts("WorkTermScheme")
+    assert len(concepts) > 0
+    all_labels = {l.lower() for c in concepts for l in c["labels"]}
+    assert "repository lexical" not in all_labels and "task lexical" not in all_labels
