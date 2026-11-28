@@ -1,6 +1,6 @@
 # 변경 이력
 
-## v0.6.1 (2026-11-28) — 어휘 유형 이름 정리 (동작 변경 없음)
+## v0.6.2 (2026-11-28) — 어휘 유형 이름 정리 (동작 변경 없음)
 
 - v0.5.0 설계의 `:ProjectName` 을 `:RepositoryLexical`, `:WorkTerm` 을 `:TaskLexical` 로 부른다. v0.6.0 글·릴리스 노트의 repository lexical / task lexical 과 맞추기 위함이다.
 - README·SKILL·`ug.py` 주석·테스트 주석의 이름을 바꿨다.

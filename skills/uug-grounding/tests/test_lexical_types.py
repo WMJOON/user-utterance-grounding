@@ -1,4 +1,4 @@
-"""어휘 유형 이름(v0.6.1): RepositoryLexical/TaskLexical 선언이 기존 어휘 로딩과 SHACL 을 건드리지 않는다."""
+"""어휘 유형 이름(v0.6.2): RepositoryLexical/TaskLexical 선언이 기존 어휘 로딩과 SHACL 을 건드리지 않는다."""
 import sys
 from pathlib import Path
 

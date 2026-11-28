@@ -2,7 +2,7 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-# 어휘 유형 이름 (v0.6.1). v0.5.0 설계의 :ProjectName / :WorkTerm 을 v0.6.0 글·릴리스 노트의
+# 어휘 유형 이름 (v0.6.2). v0.5.0 설계의 :ProjectName / :WorkTerm 을 v0.6.0 글·릴리스 노트의
 # repository lexical / task lexical 과 같은 이름으로 부르기 위한 개념 선언이다.
 #
 # 이 파일은 이름 대응만 선언한다. 기존 IRI(uug:WorkTermScheme, uug:isRepository 등)와 판정 동작은 바뀌지 않는다.
