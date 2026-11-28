@@ -1,5 +1,16 @@
 # 변경 이력
 
+## v0.6.0 (2026-11-28) — context-repository 슬롯과 repository task grounding
+
+> 작업 중인 저장소(context-repository)의 repository task 맥락을 놓치는 문제를 잡는다. 콘텐츠 허브 밖 맥락에서 "노션에 올려줘"가 일반 Notion 쓰기로 처리되어, 그 저장소의 등록 하네스(`complete_content.py`)를 우회한 사례가 계기다. 당시 유사 발화는 콘텐츠 허브를 0.93으로 가리켰지만 직전 작업(family-wealth)과 어긋나 `insufficient_agreement`로 넛지가 나가지 않았고, "콘텐츠 작성"·"노션 업로드"는 어떤 저장소의 신호로도 등록돼 있지 않았다.
+
+- **두 단계 해석으로 분리**: (1) repository lexical 과 task lexical 의 빈도로 저장소를 찾는다(기존 locate/infer). (2) context-repository 와 task lexical 로 task context(그 저장소에서 그 작업어가 뜻하는 절차)를 찾는다(신규).
+- **context-repository 슬롯**: 세션별 상태. repository lexical 로 대상이 확정(`status: clear`)되면 그 저장소로 전환한다. 추정(`likely`)·모호(`clarify`)·추론(`inferred`)은 전환하지 않는다. 저장 `~/.local/share/uug/context-repository.json`(`UUG_CONTEXT_REPOSITORY_STATE`, 원문 없음).
+- **repository task**: `projects.yaml` 의 `tasks[]`(`id`·`lexical`·`procedure`·`note`). 매 프롬프트 context-repository 의 작업어가 발화에 있으면 `[uug-task] context-repository=<repo>` 로 절차를 주입한다. 작업어가 다른 저장소 한 곳에만 있으면 전환을 되묻는다. 스키마 예시는 `projects.example.yaml`.
+- **대상 지침 주입**: 작업 대상이 확정되고 현재 세션 디렉토리와 다르면 대상의 `CLAUDE.md`(없으면 `AGENTS.md`)를 `[uug-target-rules]` 로 붙인다. 같은 (세션 디렉토리, 대상, 지침 내용)은 2시간에 한 번(`UUG_TARGET_RULES_TTL`), 8,000자 상한(`UUG_TARGET_RULES_MAX_CHARS`), 끄기 `UUG_TARGET_RULES_DISABLED=1`.
+- 테스트 13건 추가(`test_target_rules_injection.py` 7, `test_context_repository_task_grounding.py` 6). 전체 22 passed.
+- 알려진 한계: 작업어 등록은 content-broadcast-hub 만 했다. 전역 훅 정본(MSO `mso-work-memory/hooks/uug-context-hook.py`)은 이번 변경 전부터 전역 복사본과 달랐고, 정본 동기화는 이 릴리즈에 포함하지 않았다. 슬롯이 비어 있으면 task grounding 은 전환 제안만 한다.
+
 ## v0.5.1 (2026-11-25) — 작업어휘를 레포 지칭 신호로 복원, 우선순위 명시
 
 > v0.5.0 의 C1 이 작업어휘 label 을 locate 의 확정 지칭어뿐 아니라 주제어(tacit)에서도 지워, "리서치 해줘"처럼 자주 쓰는 업무 발화가 레포를 전혀 가리키지 못했다(v0.4.0 은 추정). 레포 판정 규칙의 회귀 수정이라 patch 로 낸다.

@@ -77,12 +77,12 @@ def format_context(loc, cwd=None):
             + (("\n" + rules) if (loc["status"] != "likely" and (rules := target_rules(c["path"], cwd))) else ""))
 
 
-# ---- working-environment 슬롯 (맥락) + repository task grounding ----
-# 1. repository lexical(저장소 어휘)로 대상이 확정(status=clear)되면 세션의 working-environment 를 그 저장소로 전환한다.
-# 2. 매 프롬프트, working-environment 저장소의 tasks[].lexical(작업어)이 발화에 있으면 그 저장소 절차(repository task)로 grounding 한다.
-# 3. 작업어가 working-environment 에 없고 다른 저장소 한 곳에만 있으면 전환을 제안한다.
-ENV_STATE = Path(os.environ.get("UUG_WORKING_ENV_STATE",
-                                str(Path.home() / ".local" / "share" / "uug" / "working-env.json")))
+# ---- context-repository 슬롯 (맥락) + repository task grounding ----
+# 1. repository lexical(저장소 어휘)로 대상이 확정(status=clear)되면 세션의 context-repository 를 그 저장소로 전환한다.
+# 2. 매 프롬프트, context-repository 저장소의 tasks[].lexical(작업어)이 발화에 있으면 그 저장소 절차(repository task)로 grounding 한다.
+# 3. 작업어가 context-repository 에 없고 다른 저장소 한 곳에만 있으면 전환을 제안한다.
+ENV_STATE = Path(os.environ.get("UUG_CONTEXT_REPOSITORY_STATE",
+                                str(Path.home() / ".local" / "share" / "uug" / "context-repository.json")))
 
 
 def session_key(transcript=None, cwd=None):
@@ -96,11 +96,11 @@ def _load_env_state():
         return {}
 
 
-def working_env(key):
+def context_repository(key):
     return _load_env_state().get(key)
 
 
-def update_working_env(loc, key, now=None):
+def update_context_repository(loc, key, now=None):
     """저장소 어휘로 대상이 확정되면 슬롯을 전환한다. 전환했으면 새 값을 반환한다."""
     if not loc or loc.get("status") != "clear" or not loc.get("emit"):
         return None
@@ -131,7 +131,7 @@ def _match_tasks(utterance, tasks):
 
 
 def ground_task(utterance, env, projects):
-    """working-environment 기준 repository task 를 찾는다. 반환: (kind, repo, tasks) 또는 None."""
+    """context-repository 기준 repository task 를 찾는다. 반환: (kind, repo, tasks) 또는 None."""
     env_repo = (env or {}).get("repo")
     if env_repo:
         hits = _match_tasks(utterance, (projects.get(env_repo) or {}).get("tasks"))
@@ -153,8 +153,8 @@ def format_task(result, env=None):
     for t in tasks:
         lines.append(f"- {t.get('id')}: {t.get('procedure')}" + (f" ({t.get('note')})" if t.get("note") else ""))
     if kind == "grounded":
-        return (f"[uug-task] working-environment={repo} — 이 발화의 작업어는 이 저장소의 절차를 가리킨다. "
+        return (f"[uug-task] context-repository={repo} — 이 발화의 작업어는 이 저장소의 절차를 가리킨다. "
                 f"일반 도구로 직접 처리하지 말고 아래 절차를 따를 것.\n" + "\n".join(lines))
     cur = (env or {}).get("repo") or "미설정"
-    return (f"[uug-task] 작업어가 현재 working-environment({cur})가 아닌 {repo} 의 절차를 가리킨다. "
+    return (f"[uug-task] 작업어가 현재 context-repository({cur})가 아닌 {repo} 의 절차를 가리킨다. "
             f"{repo} 로 전환할지 사용자에게 확인한 뒤 진행할 것.\n" + "\n".join(lines))
