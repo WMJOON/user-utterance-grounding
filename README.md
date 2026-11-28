@@ -145,25 +145,27 @@ v0.5.0 의 두 축이다. **어휘를 유형별로 분류해 중요도를 달리
 
 ```
 :Utterance --:mentions--> :Term
-:Term a :ProjectName | :Keyword | :WorkTerm | :Directive
+:Term a :RepositoryLexical | :Keyword | :TaskLexical | :Directive
 ```
 
-같은 단어라도 어느 클래스로 분류하느냐에 따라 해석이 달라진다. 'repository'를 `:ProjectName`으로 두면 서브모듈 디렉토리명과 맞아떨어져 엉뚱한 레포로 확정되고, `:WorkTerm`으로 두면 업무 유형으로 읽힌다.
+> **이름 대응 (v0.6.1)**: v0.5.0 설계의 `:ProjectName` 은 `:RepositoryLexical`(저장소를 직접 가리키는 말: id·별칭), `:WorkTerm` 은 `:TaskLexical`(작업을 가리키는 말)로 부른다. 동작과 TTL 의 IRI(`uug:WorkTermScheme` 등)는 바뀌지 않았다. `uug:RepositoryWord`("레포지토리"처럼 클래스 이름 자체를 가리키는 단어)는 `:RepositoryLexical` 이 아니다. `isRepository` facet 은 "저장소 단위 작업인가"를 묻는 속성이라 이름 대응과 무관하다. v0.6.0 부터 `:TaskLexical` 은 저장소 추정 신호에 더해, context-repository 와 합쳐 그 저장소의 절차(repository task)를 찾는 데도 쓰인다.
 
-레포 판정의 우선순위는 **`:ProjectName > :WorkTerm > :Keyword > :Directive`** 다.
+같은 단어라도 어느 클래스로 분류하느냐에 따라 해석이 달라진다. 'repository'를 `:RepositoryLexical`으로 두면 서브모듈 디렉토리명과 맞아떨어져 엉뚱한 레포로 확정되고, `:TaskLexical`으로 두면 업무 유형으로 읽힌다.
+
+레포 판정의 우선순위는 **`:RepositoryLexical > :TaskLexical > :Keyword > :Directive`** 다.
 
 | 순위 | 유형 | 예 | 레포 판정 | 정의 위치 |
 |------|------|----|----------|----------|
-| 1 | `:ProjectName` | 레포 id·별칭 | **확정** (`clear`) | `projects.yaml` id·`aliases` |
-| 2 | `:WorkTerm` | 리서치·정리·기록·릴리즈 | **추정** — 학습한 어휘→레포 빈도에서 한 레포가 과반이면 그 레포 (`likely`). 확정 지칭어로는 쓰지 않는다 | `taxonomy/vocab_terms.ttl` + `vocab-term-map.json` |
+| 1 | `:RepositoryLexical` | 레포 id·별칭 | **확정** (`clear`) | `projects.yaml` id·`aliases` |
+| 2 | `:TaskLexical` | 리서치·정리·기록·릴리즈 | **추정** — 학습한 어휘→레포 빈도에서 한 레포가 과반이면 그 레포 (`likely`). 확정 지칭어로는 쓰지 않는다 | `taxonomy/vocab_terms.ttl` + `vocab-term-map.json` |
 | 3 | `:Keyword` | 온톨로지·분석 | **추정** — 과거 작업 분포로 판단 (`likely`/`clarify`) | `projects.yaml` `keywords` |
 | 4 | `:Directive` | 해줘·하자·어때 | **레포 신호 없음** — 명령인지만 본다 | `taxonomy/vocab_terms.ttl` |
 
-- `:WorkTerm` 과 `:Keyword` 가 다른 레포를 가리키면 되묻되 `:WorkTerm` 쪽을 추천한다(`recommended_by: 작업어휘`). `:ProjectName` 이 있으면 그쪽이 확정된다.
+- `:TaskLexical` 과 `:Keyword` 가 다른 레포를 가리키면 되묻되 `:TaskLexical` 쪽을 추천한다(`recommended_by: 작업어휘`). `:RepositoryLexical` 이 있으면 그쪽이 확정된다.
 - 여러 레포에 퍼진 작업어휘(실행·기록 등, 과반 없음)는 레포 신호를 내지 않는다. 빈도 맵이 없거나 관측이 10건 미만이면 같은 말이 `projects.yaml` 키워드일 때 `:Keyword` 로 폴백한다.
 - 작성자 환경 LOO: '리서치' 신호 27건 중 16건 적중(59%). 점유가 정확히 50%였던 '릴리즈'는 신호 8건이 모두 오답이어서 기준을 과반(50% 초과)으로 둔다.
 
-`:WorkTerm` 은 Binary Condition 으로 정의한다. 네 속성을 `xsd:boolean` 으로 정확히 하나씩 갖고(SHACL `references/shapes/vocab_shapes.ttl`), '모름'은 허용하지 않는다. 타입 멤버십은 open world 라 "아니다"를 표현하지 못해 쓰지 않는다. MSO 클래스는 `uug:denotesType wf:Workflow` 처럼 가리키기만 한다.
+`:TaskLexical` 은 Binary Condition 으로 정의한다. 네 속성을 `xsd:boolean` 으로 정확히 하나씩 갖고(SHACL `references/shapes/vocab_shapes.ttl`), '모름'은 허용하지 않는다. 타입 멤버십은 open world 라 "아니다"를 표현하지 못해 쓰지 않는다. MSO 클래스는 `uug:denotesType wf:Workflow` 처럼 가리키기만 한다.
 
 | 속성 | 묻는 것 |
 |------|--------|
@@ -194,7 +196,7 @@ A ≠ B → 주입
 
 | 조건 | 질문 | 쓰임 |
 |------|------|------|
-| C1 | `:WorkTerm` 인가 | 확정 지칭어에서 제외 (빈도 기반 추정에는 쓴다) |
+| C1 | `:TaskLexical` 인가 | 확정 지칭어에서 제외 (빈도 기반 추정에는 쓴다) |
 | C2 | 명령인가 | intent 키워드가 동점일 때만 facet 과 함께 순서를 정한다 |
 | C3 | 직전 레포에서 하던 업무인가 | 그 어휘가 직전 레포에서 드물고(적용 빈도 < 2%) 다른 레포에 과반이 몰려 있으면 그 레포를 추천하고 되묻는다 |
 
@@ -350,7 +352,7 @@ sentence-transformers # 선택: eval_targets.py 리랭커 실험에만 사용
 - **횡단 패턴 → 엄브렐러 제안**: `uug-pattern-analytics`가 사용자가 N개 프로젝트를 반복 횡단하는 패턴을 관측해 "엄브렐러/모노로 합쳐 가로지르는 워크플로우 생성"을 **제안**(실행은 프로젝트가). 미구현.
 - **user-memory 데이터 레이어**: UC/UP/UF 영속 저장소 위치·이름 확정.
 - **locate 학습 자동 갱신**: `tag_targets` → `keyword_map` → `vocab_map` → `similar index` 주기 실행과 locate-log 기반 임계 튜닝(C3 임계값 재측정 포함).
-- **작업어휘 확장**: 현재 `:WorkTerm` 9개·`:Directive` 5개. 서브모듈 디렉토리명(`repository` 등) 대신 상위 디렉토리명으로 지칭하는 규칙, 판정 불가 지시문(약 61%) 축소.
+- **작업어휘 확장**: 현재 `:TaskLexical` 9개·`:Directive` 5개. 서브모듈 디렉토리명(`repository` 등) 대신 상위 디렉토리명으로 지칭하는 규칙, 판정 불가 지시문(약 61%) 축소.
 - **intent 동사 트리거 확장**: 현재 intent 매칭률이 낮다("고쳐줘/만들자" 미매칭). 태깅 이력의 `disagree`·미매칭 발화를 트리거 정련 근거로 사용.
 
 ---

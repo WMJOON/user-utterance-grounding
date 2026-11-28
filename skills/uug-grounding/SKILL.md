@@ -75,7 +75,7 @@ explicit(프로젝트 id·`aliases`) 은 대상 디렉토리 안내, tacit(`keyw
 - **ambiguous fallback (top-2 margin)**: `match_intent` 가 top-1·top-2 점수차(`margin`, 후보 1개면 None)를 산출하고, `margin < 임계` 면 commit 대신 `ambiguous`(HITL, 임계 창 내 후보 나열, rc 2). 임계는 스코프별 env 로 튜닝 — user `UG_AMBIGUOUS_MARGIN_USER`(기본 1: 동점만 HITL), 도메인 `UG_AMBIGUOUS_MARGIN_DOMAIN`(기본 0: 동점도 top-1 commit, §11.1 first-match-wins 비회귀). 동점 commit 은 결과의 `committed_low_margin`(dispatch JSON 은 `uug_margin`/`uug_committed_low_margin`)으로 관측 → uug-pattern-analytics 임계 튜닝 재료. 실측(fixture 50발화)상 오답은 margin 0 에 집중, margin ≥ 1 은 전건 정답이라 기본 임계 상향은 무익 — 키워드 가중 스코어링으로 margin 해상도 확보가 후속.
 
 - **Binary Condition (UD-0004)**: 후보를 지우지 않고 순서·추천만 바꾼다(UD-0001 가중 원칙).
-  - **레포 판정 우선순위 (UD-0006)** — `:ProjectName`(id·alias, 확정) > `:WorkTerm`(작업어휘, `vocab-term-map.json` 에서 한 레포가 과반이면 추정) > `:Keyword`(projects.yaml keywords, 추정) > `:Directive`(레포 신호 없음). 작업어휘와 주제어가 갈리면 작업어휘 쪽을 추천하고 되묻는다.
+  - **레포 판정 우선순위 (UD-0006)** — `:RepositoryLexical`(id·alias, 확정) > `:TaskLexical`(작업어휘, `vocab-term-map.json` 에서 한 레포가 과반이면 추정) > `:Keyword`(projects.yaml keywords, 추정) > `:Directive`(레포 신호 없음). 작업어휘와 주제어가 갈리면 작업어휘 쪽을 추천하고 되묻는다.
   - **C1 작업어휘인가** — 작업어휘 label("repository"·"워크플로우" 등)은 확정(explicit) 지칭어로 쓰지 않는다. 서브모듈 디렉토리명·alias 가 같아도 확정 금지(프로젝트 id 자체는 예외). 빈도 기반 추정에는 쓴다.
   - **C2 명령형인가** — 발화 끝 지시문(해줘·하자 / 어때·할까·?)으로 판정. 지시문은 trigger_keywords 에 넣지 않는다.
   - **동점 해소** — `match_intent` 가 margin 0 일 때만 facet·C2 호환 점수로 해소(`tiebreak`). facet 근거는 그 intent 가 이미 키워드로 센 어휘를 뺀 나머지에서만 가져온다(순환 근거 차단). 풀리면 `ambiguous` 해제, `margin` 은 관측값 그대로.

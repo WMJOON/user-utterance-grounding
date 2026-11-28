@@ -531,7 +531,7 @@ def _vocab_words():
 
 
 def _workterm_signals(utterance):
-    """:WorkTerm → 레포 (UD-0006). vocab-term-map 에서 관측이 충분한(n ≥ VOCAB_MIN_OBS) 작업어휘만.
+    """:TaskLexical → 레포 (UD-0006). vocab-term-map 에서 관측이 충분한(n ≥ VOCAB_MIN_OBS) 작업어휘만.
     반환 (signals, handled_labels):
       signals        {project: {"label", "concept", "share"}} — 한 레포 점유가 과반(> VOCAB_DOMINANT_SHARE)인 어휘
       handled_labels 판정에 쓴 어휘의 label(소문자). 분산된 어휘(실행·기록 등)도 포함 —
@@ -562,17 +562,17 @@ def _workterm_signals(utterance):
 def do_locate(utterance, use_similar=False):
     """발화가 지칭하는 프로젝트 디렉토리 추론 (intent 무관, 부작용 없음).
 
-    어휘 유형과 우선순위 (UD-0006): :ProjectName > :WorkTerm > :Keyword > :Directive
-      :ProjectName = 프로젝트 id + aliases (+ 미등록 서브모듈 이름) — 직접 지칭, 확정.
-      :WorkTerm    = 작업어휘(vocab_terms.ttl) — 학습한 어휘→레포 빈도(vocab-term-map)로 추정.
+    어휘 유형과 우선순위 (UD-0006): :RepositoryLexical > :TaskLexical > :Keyword > :Directive
+      :RepositoryLexical = 프로젝트 id + aliases (+ 미등록 서브모듈 이름) — 직접 지칭, 확정.
+      :TaskLexical    = 작업어휘(vocab_terms.ttl) — 학습한 어휘→레포 빈도(vocab-term-map)로 추정.
                      확정 지칭어로는 쓰지 않는다(C1: 'repository' 서브모듈명 오인 방지).
       :Keyword     = projects.yaml keywords — 주제 암시, keyword-map 학습 분포로 추정.
       :Directive   = 해줘·하자·어때 — 레포 신호 없음.
     status:
-      clear    — :ProjectName 이 한 프로젝트를 가리킴
+      clear    — :RepositoryLexical 이 한 프로젝트를 가리킴
       likely   — 추정 신호가 한쪽으로 모임 → 확인 후 진행
-      clarify  — :ProjectName 끼리 충돌 / 추정 신호가 갈라짐. :WorkTerm 이 :Keyword 와 다른 레포를
-                 가리키면 :WorkTerm 쪽을 추천(recommended_by: 작업어휘)
+      clarify  — :RepositoryLexical 끼리 충돌 / 추정 신호가 갈라짐. :TaskLexical 이 :Keyword 와 다른 레포를
+                 가리키면 :TaskLexical 쪽을 추천(recommended_by: 작업어휘)
       none     — 지칭 신호 없음
     """
     anchors = load_anchors()
@@ -594,7 +594,7 @@ def do_locate(utterance, use_similar=False):
             owner[base] = label
             explicit.add(base)
 
-    # :WorkTerm 신호 — 학습한 빈도가 충분한 작업어휘는 여기서 판정하고, 같은 label 을
+    # :TaskLexical 신호 — 학습한 빈도가 충분한 작업어휘는 여기서 판정하고, 같은 label 을
     # :Keyword 로 두 번 세지 않는다. 빈도가 없거나 부족하면 :Keyword 판정으로 폴백한다.
     work, work_labels = _workterm_signals(utterance)
     vocab_words = _vocab_words()
@@ -639,7 +639,7 @@ def do_locate(utterance, use_similar=False):
     if sure:   # explicit 끼리 충돌 (두 프로젝트를 모두 부름)
         return {"status": "clarify", "keywords": keywords,
                 "candidates": [cand(p, kw) for p, kw in sure.items()]}
-    if work:   # :WorkTerm > :Keyword
+    if work:   # :TaskLexical > :Keyword
         wc = [cand(p, w["label"], w["share"], "workterm")
               for p, w in sorted(work.items(), key=lambda x: -x[1]["share"])]
         others = [p for p in list(likely) + list(unsure) if p not in work]

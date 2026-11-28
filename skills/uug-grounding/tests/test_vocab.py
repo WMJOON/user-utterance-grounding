@@ -177,7 +177,7 @@ def test_infer_keeps_continuity_when_prev_applies(fake_registry, monkeypatch):
     assert r["status"] == "likely" and r["candidates"][0]["project"] == "kb"
 
 
-# ─── UD-0006: :ProjectName > :WorkTerm > :Keyword > :Directive ───
+# ─── UD-0006: :RepositoryLexical > :TaskLexical > :Keyword > :Directive ───
 def test_workterm_points_to_repo(fake_registry):
     """v0.5.0 회귀: 작업어휘가 레포를 전혀 가리키지 못했다. 이제 학습 빈도로 추정한다."""
     loc = ug.do_locate("리서치 해줘")
