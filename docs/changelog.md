@@ -1,9 +1,10 @@
 # 변경 이력
 
-## v0.6.1 (2026-11-28) — 어휘 유형 이름 정리 (문서·주석, 동작 변경 없음)
+## v0.6.1 (2026-11-28) — 어휘 유형 이름 정리 (동작 변경 없음)
 
 - v0.5.0 설계의 `:ProjectName` 을 `:RepositoryLexical`, `:WorkTerm` 을 `:TaskLexical` 로 부른다. v0.6.0 글·릴리스 노트의 repository lexical / task lexical 과 맞추기 위함이다.
-- README·SKILL·`ug.py` 주석·테스트 주석만 바뀌었다. IRI(`uug:WorkTermScheme` 등), `kind: workterm` 값, 판정 결과는 그대로다. IRI 쪽 정리는 후속 변경에서 별칭을 두고 다룬다.
+- README·SKILL·`ug.py` 주석·테스트 주석의 이름을 바꿨다.
+- `skills/uug-grounding/taxonomy/lexical_types.ttl` 을 추가해 `uug:RepositoryLexical`·`uug:TaskLexical` 을 선언하고 옛 이름(ProjectName·WorkTerm)을 altLabel 로 남겼다. 기존 IRI(`uug:WorkTermScheme` 등), `kind: workterm` 값, 판정 결과는 그대로다. 새 개념은 `skos:inScheme` 를 쓰지 않는다(SHACL 이 작업어휘 facet 을 요구하므로).
 
 ## v0.6.0 (2026-11-28) — context-repository 슬롯과 repository task grounding
 

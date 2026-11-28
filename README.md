@@ -148,7 +148,7 @@ v0.5.0 의 두 축이다. **어휘를 유형별로 분류해 중요도를 달리
 :Term a :RepositoryLexical | :Keyword | :TaskLexical | :Directive
 ```
 
-> **이름 대응 (v0.6.1)**: v0.5.0 설계의 `:ProjectName` 은 `:RepositoryLexical`(저장소를 직접 가리키는 말: id·별칭), `:WorkTerm` 은 `:TaskLexical`(작업을 가리키는 말)로 부른다. 동작과 TTL 의 IRI(`uug:WorkTermScheme` 등)는 바뀌지 않았다. `uug:RepositoryWord`("레포지토리"처럼 클래스 이름 자체를 가리키는 단어)는 `:RepositoryLexical` 이 아니다. `isRepository` facet 은 "저장소 단위 작업인가"를 묻는 속성이라 이름 대응과 무관하다. v0.6.0 부터 `:TaskLexical` 은 저장소 추정 신호에 더해, context-repository 와 합쳐 그 저장소의 절차(repository task)를 찾는 데도 쓰인다.
+> **이름 대응 (v0.6.1)**: v0.5.0 설계의 `:ProjectName` 은 `:RepositoryLexical`(저장소를 직접 가리키는 말: id·별칭), `:WorkTerm` 은 `:TaskLexical`(작업을 가리키는 말)로 부른다. 동작과 기존 IRI(`uug:WorkTermScheme` 등)는 바뀌지 않았고, 두 이름은 `taxonomy/lexical_types.ttl` 에 개념으로 선언돼 있다. `uug:RepositoryWord`("레포지토리"처럼 클래스 이름 자체를 가리키는 단어)는 `:RepositoryLexical` 이 아니다. `isRepository` facet 은 "저장소 단위 작업인가"를 묻는 속성이라 이름 대응과 무관하다. v0.6.0 부터 `:TaskLexical` 은 저장소 추정 신호에 더해, context-repository 와 합쳐 그 저장소의 절차(repository task)를 찾는 데도 쓰인다.
 
 같은 단어라도 어느 클래스로 분류하느냐에 따라 해석이 달라진다. 'repository'를 `:RepositoryLexical`으로 두면 서브모듈 디렉토리명과 맞아떨어져 엉뚱한 레포로 확정되고, `:TaskLexical`으로 두면 업무 유형으로 읽힌다.
 
